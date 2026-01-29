@@ -32,7 +32,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-WSL_DISTRO = "kali-linux"
+WSL_DISTRO = "kali"
 DEFAULT_PROXY = "127.0.0.1:8080"
 DEFAULT_TIMEOUT = 10
 DEFAULT_DELAY = 1.0

@@ -37,7 +37,7 @@ DEFAULT_PROXY = "127.0.0.1:8080"
 DEFAULT_TIMEOUT = 10
 DEFAULT_DELAY = 1.0
 DIR_WORDLIST = "/usr/share/wordlists/dirb/common.txt"
-FILE_EXTENSIONS = "php,txt,bak,conf,log,xml,json,env,old,zip"
+FILE_EXTENSIONS = "php,txt,bak,conf,log,xml,json,env,old,zip,asp,aspx,ashx,asmx,svc,config,cs,csproj,sln"
 
 # Speed profiles: (label, nmap_timing, ffuf_rate, ffuf_threads, subfinder_rate_limit)
 SPEED_PROFILES = {

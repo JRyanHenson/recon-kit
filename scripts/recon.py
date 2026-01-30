@@ -398,14 +398,26 @@ def enum_subdomains(hosts, timeout, speed):
 # Phase 4: Directory Scanning
 # ---------------------------------------------------------------------------
 
+def parse_ffuf_output(stdout):
+    """Parse ffuf output lines into list of (path, status_code) tuples."""
+    results = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line or "[Status:" not in line:
+            continue
+        # Format: /path  [Status: 200, Size: 1234, Words: 56, Lines: 12, Duration: 123ms]
+        match = re.match(r"^(\S+)\s+\[Status:\s*(\d+)", line)
+        if match:
+            results.append((match.group(1), int(match.group(2))))
+    return results
+
+
 def run_ffuf_dir(host, wordlist, timeout, ffuf_rate=0, ffuf_threads=20, status_codes="200,204,301,302,307,401,403"):
     url = f"https://{host}/FUZZ"
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
-    cmd = f"ffuf -u {url} -w {wordlist} -mc {status_codes} -t {ffuf_threads} {rate_flag} -s 2>/dev/null"
+    cmd = f"ffuf -u {url} -w {wordlist} -mc {status_codes} -t {ffuf_threads} {rate_flag} 2>/dev/null"
     stdout, stderr, rc = wsl_run(cmd, timeout)
-    if stdout:
-        return [line.strip() for line in stdout.splitlines() if line.strip()]
-    return []
+    return parse_ffuf_output(stdout)
 
 
 def prompt_status_codes(default="200,204,301,302,307,401,403"):
@@ -457,8 +469,8 @@ def scan_directories(hosts, timeout, speed):
 
         if results:
             print(f"    Found {len(results)} entries:")
-            for entry in results[:50]:  # Limit terminal output
-                print(f"      {entry}")
+            for path, code in results[:50]:  # Limit terminal output
+                print(f"      {path} ({code})")
             if len(results) > 50:
                 print(f"      ... and {len(results) - 50} more (see report)")
         else:
@@ -477,11 +489,9 @@ def run_ffuf_files(host, wordlist, extensions, timeout, ffuf_rate=0, ffuf_thread
     url = f"https://{host}/FUZZ"
     ext_list = ",".join(f".{e}" for e in extensions.split(","))
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
-    cmd = f"ffuf -u {url} -w {wordlist} -e {ext_list} -mc {status_codes} -t {ffuf_threads} {rate_flag} -s 2>/dev/null"
+    cmd = f"ffuf -u {url} -w {wordlist} -e {ext_list} -mc {status_codes} -t {ffuf_threads} {rate_flag} 2>/dev/null"
     stdout, stderr, rc = wsl_run(cmd, timeout)
-    if stdout:
-        return [line.strip() for line in stdout.splitlines() if line.strip()]
-    return []
+    return parse_ffuf_output(stdout)
 
 
 def scan_files(hosts, timeout, speed):
@@ -508,8 +518,8 @@ def scan_files(hosts, timeout, speed):
 
         if results:
             print(f"    Found {len(results)} files:")
-            for entry in results[:50]:
-                print(f"      {entry}")
+            for path, code in results[:50]:
+                print(f"      {path} ({code})")
             if len(results) > 50:
                 print(f"      ... and {len(results) - 50} more (see report)")
         else:
@@ -889,8 +899,8 @@ def write_report(hosts, scope_file, output_path):
             lines.append(f"### {hostname}")
             lines.append("")
             if dirs:
-                for entry in dirs:
-                    lines.append(f"- `{entry}`")
+                for path, code in dirs:
+                    lines.append(f"- `{path}` ({code})")
             else:
                 lines.append("No directories found.")
             lines.append("")
@@ -904,8 +914,8 @@ def write_report(hosts, scope_file, output_path):
             lines.append(f"### {hostname}")
             lines.append("")
             if files:
-                for entry in files:
-                    lines.append(f"- `{entry}`")
+                for path, code in files:
+                    lines.append(f"- `{path}` ({code})")
             else:
                 lines.append("No files found.")
             lines.append("")

@@ -393,14 +393,39 @@ def enum_subdomains(hosts, timeout, speed):
 # Phase 4: Directory Scanning
 # ---------------------------------------------------------------------------
 
-def run_ffuf_dir(host, wordlist, timeout, ffuf_rate=0, ffuf_threads=20):
+def run_ffuf_dir(host, wordlist, timeout, ffuf_rate=0, ffuf_threads=20, status_codes="200,204,301,302,307,401,403"):
     url = f"https://{host}/FUZZ"
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
-    cmd = f"ffuf -u {url} -w {wordlist} -mc 200,204,301,302,307,401,403 -t {ffuf_threads} {rate_flag} -s 2>/dev/null"
+    cmd = f"ffuf -u {url} -w {wordlist} -mc {status_codes} -t {ffuf_threads} {rate_flag} -s 2>/dev/null"
     stdout, stderr, rc = wsl_run(cmd, timeout)
     if stdout:
         return [line.strip() for line in stdout.splitlines() if line.strip()]
     return []
+
+
+def prompt_status_codes(default="200,204,301,302,307,401,403"):
+    """Prompt user to select which HTTP status codes to match."""
+    print(f"  Which HTTP status codes should be included in results?\n")
+    print(f"    [1] 200 only              (just successful responses)")
+    print(f"    [2] 200,204,301,302,307   (success + redirects)")
+    print(f"    [3] 200,204,301,302,307,401,403  (default - includes auth/forbidden)")
+    print(f"    [4] Custom")
+    print()
+    while True:
+        choice = input("  Status codes [1-4]: ").strip()
+        if choice == "1":
+            codes = "200"
+        elif choice == "2":
+            codes = "200,204,301,302,307"
+        elif choice == "3":
+            codes = default
+        elif choice == "4":
+            codes = input("  Enter comma-separated status codes: ").strip()
+        else:
+            print("  Invalid choice. Enter 1-4.")
+            continue
+        print(f"  Matching: {codes}\n")
+        return codes
 
 
 def scan_directories(hosts, timeout, speed):
@@ -418,11 +443,12 @@ def scan_directories(hosts, timeout, speed):
         print("  Skipping directory scanning.")
         return
 
+    status_codes = prompt_status_codes()
     _, _, ffuf_rate, ffuf_threads, _ = speed
 
     for hostname in sorted(eligible):
         print(f"\n  Scanning {hostname}...")
-        results = run_ffuf_dir(hostname, DIR_WORDLIST, timeout, ffuf_rate, ffuf_threads)
+        results = run_ffuf_dir(hostname, DIR_WORDLIST, timeout, ffuf_rate, ffuf_threads, status_codes)
 
         if results:
             print(f"    Found {len(results)} entries:")
@@ -442,11 +468,11 @@ def scan_directories(hosts, timeout, speed):
 # Phase 5: File Scanning
 # ---------------------------------------------------------------------------
 
-def run_ffuf_files(host, wordlist, extensions, timeout, ffuf_rate=0, ffuf_threads=20):
+def run_ffuf_files(host, wordlist, extensions, timeout, ffuf_rate=0, ffuf_threads=20, status_codes="200,204,301,302,307,401,403"):
     url = f"https://{host}/FUZZ"
     ext_list = ",".join(f".{e}" for e in extensions.split(","))
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
-    cmd = f"ffuf -u {url} -w {wordlist} -e {ext_list} -mc 200,204,301,302,307,401,403 -t {ffuf_threads} {rate_flag} -s 2>/dev/null"
+    cmd = f"ffuf -u {url} -w {wordlist} -e {ext_list} -mc {status_codes} -t {ffuf_threads} {rate_flag} -s 2>/dev/null"
     stdout, stderr, rc = wsl_run(cmd, timeout)
     if stdout:
         return [line.strip() for line in stdout.splitlines() if line.strip()]
@@ -468,11 +494,12 @@ def scan_files(hosts, timeout, speed):
         print("  Skipping file scanning.")
         return
 
+    status_codes = prompt_status_codes()
     _, _, ffuf_rate, ffuf_threads, _ = speed
 
     for hostname in sorted(eligible):
         print(f"\n  Scanning {hostname} for files ({FILE_EXTENSIONS})...")
-        results = run_ffuf_files(hostname, DIR_WORDLIST, FILE_EXTENSIONS, timeout, ffuf_rate, ffuf_threads)
+        results = run_ffuf_files(hostname, DIR_WORDLIST, FILE_EXTENSIONS, timeout, ffuf_rate, ffuf_threads, status_codes)
 
         if results:
             print(f"    Found {len(results)} files:")

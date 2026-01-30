@@ -7,8 +7,13 @@ Parses a Burp Suite scope JSON and runs reconnaissance phases:
 2. Proxy load targets through Burp Suite
 3. Fingerprint web technologies (whatweb, wafw00f, nmap)
 4. Subdomain enumeration (subfinder)
-5. Directory scanning (gobuster)
-6. File scanning (gobuster)
+5. Directory scanning (ffuf)
+6. File scanning (ffuf)
+7. Live host probing (httpx)
+8. Screenshots (gowitness)
+9. JavaScript crawling (katana)
+10. Parameter discovery (paramspider)
+11. Nuclei vulnerability scanning
 
 Runs on Windows 10. Kali tools executed via WSL.
 Results output to terminal and markdown report.
@@ -516,8 +521,283 @@ def scan_files(hosts, timeout, speed):
 
 
 # ---------------------------------------------------------------------------
-# Report Generation
+# Phase 6: Live Host Probing (httpx)
 # ---------------------------------------------------------------------------
+
+def run_httpx(hosts_list, timeout):
+    """Run httpx on a list of hosts and return parsed results."""
+    # Write hosts to a temp file for httpx input
+    hosts_str = "\\n".join(hosts_list)
+    cmd = f"echo -e '{hosts_str}' | httpx -silent -status-code -title -tech-detect -follow-redirects 2>/dev/null"
+    stdout, stderr, rc = wsl_run(cmd, timeout)
+    if stdout:
+        return [line.strip() for line in stdout.splitlines() if line.strip()]
+    return []
+
+
+def probe_live_hosts(hosts, timeout):
+    """Probe hosts and discovered subdomains with httpx."""
+    section("Live Host Probing (httpx)", 7)
+
+    if not prompt_yn("Run live host probing with httpx?"):
+        print("  Skipping live host probing.")
+        return
+
+    # Collect all hosts + discovered subdomains
+    all_targets = []
+    scannable = {h: v for h, v in hosts.items() if not h.startswith(".")}
+    for hostname in sorted(scannable):
+        all_targets.append(hostname)
+
+    # Add discovered subdomains
+    for info in hosts.values():
+        subs = info["results"].get("subdomains", [])
+        for sub in subs:
+            if sub not in all_targets:
+                all_targets.append(sub)
+
+    print(f"  Probing {len(all_targets)} targets...")
+    results = run_httpx(all_targets, timeout)
+
+    if results:
+        print(f"    {len(results)} live hosts found:\n")
+        for line in results:
+            print(f"      {line}")
+    else:
+        print(f"    No live hosts detected.")
+
+    # Store results globally
+    hosts["__httpx_results"] = {"results": {"httpx": results}, "hostname": "__httpx", "allow_dir_scan": False, "allow_subdomain_scan": False}
+
+    print(f"\n  Live host probing complete.")
+
+
+# ---------------------------------------------------------------------------
+# Phase 7: Screenshots (gowitness)
+# ---------------------------------------------------------------------------
+
+def screenshot_hosts(hosts, timeout):
+    """Capture screenshots of live hosts with gowitness."""
+    section("Screenshots (gowitness)", 8)
+
+    print("  \033[93mNote: Screenshots will be saved in the Kali filesystem.\033[0m")
+    if not prompt_yn("Capture screenshots with gowitness?"):
+        print("  Skipping screenshots.")
+        return
+
+    output_dir = input("  Screenshot output directory (default: /tmp/gowitness): ").strip()
+    if not output_dir:
+        output_dir = "/tmp/gowitness"
+
+    # Collect all targets
+    all_targets = []
+    scannable = {h: v for h, v in hosts.items() if not h.startswith(".") and h != "__httpx_results"}
+    for hostname in sorted(scannable):
+        all_targets.append(f"https://{hostname}")
+
+    for info in hosts.values():
+        subs = info["results"].get("subdomains", [])
+        for sub in subs:
+            all_targets.append(f"https://{sub}")
+
+    targets_str = "\\n".join(all_targets)
+    print(f"\n  Screenshotting {len(all_targets)} targets...")
+
+    cmd = f"mkdir -p {output_dir} && echo -e '{targets_str}' | gowitness scan file -f - --screenshot-path {output_dir} 2>/dev/null"
+    stdout, stderr, rc = wsl_run(cmd, timeout)
+
+    if rc == 0:
+        # Count screenshots
+        count_stdout, _, _ = wsl_run(f"ls {output_dir}/*.png 2>/dev/null | wc -l", 10)
+        count = count_stdout.strip() if count_stdout else "0"
+        print(f"    {count} screenshots saved to {output_dir}")
+    else:
+        print(f"    \033[91mgowitness error: {stderr[:200]}\033[0m")
+
+    hosts["__screenshot_results"] = {"results": {"screenshots": {"output_dir": output_dir, "count": all_targets}}, "hostname": "__screenshots", "allow_dir_scan": False, "allow_subdomain_scan": False}
+
+    print(f"\n  Screenshots complete.")
+
+
+# ---------------------------------------------------------------------------
+# Phase 8: JavaScript Crawling (katana)
+# ---------------------------------------------------------------------------
+
+def run_katana(host, timeout):
+    url = f"https://{host}"
+    cmd = f"katana -u {url} -jc -silent -d 2 -ef css,png,jpg,jpeg,gif,svg,woff,woff2,ttf,ico 2>/dev/null"
+    stdout, stderr, rc = wsl_run(cmd, timeout)
+    if stdout:
+        return [line.strip() for line in stdout.splitlines() if line.strip()]
+    return []
+
+
+def crawl_js(hosts, timeout):
+    """Crawl targets for JavaScript files and endpoints with katana."""
+    section("JavaScript Crawling (katana)", 9)
+
+    if not prompt_yn("Crawl targets for JS files and endpoints with katana?"):
+        print("  Skipping JS crawling.")
+        return
+
+    scannable = {h: v for h, v in hosts.items() if v.get("allow_dir_scan") and not h.startswith(".")}
+
+    if not scannable:
+        print("  No hosts eligible for crawling.")
+        return
+
+    print(f"  Crawling {len(scannable)} host(s)...\n")
+
+    for hostname in sorted(scannable):
+        print(f"  [{hostname}]")
+        results = run_katana(hostname, timeout)
+
+        # Filter for interesting findings
+        js_files = [r for r in results if r.endswith(".js")]
+        api_endpoints = [r for r in results if "/api/" in r or "/v1/" in r or "/v2/" in r or "/graphql" in r]
+        other = [r for r in results if r not in js_files and r not in api_endpoints]
+
+        if js_files:
+            print(f"    JS files ({len(js_files)}):")
+            for f in js_files[:20]:
+                print(f"      {f}")
+            if len(js_files) > 20:
+                print(f"      ... and {len(js_files) - 20} more (see report)")
+
+        if api_endpoints:
+            print(f"    API endpoints ({len(api_endpoints)}):")
+            for ep in api_endpoints[:20]:
+                print(f"      {ep}")
+
+        if not js_files and not api_endpoints:
+            print(f"    No JS files or API endpoints found. ({len(other)} other URLs crawled)")
+
+        scannable[hostname]["results"]["katana"] = {
+            "js_files": js_files,
+            "api_endpoints": api_endpoints,
+            "all_urls": results,
+        }
+
+    print(f"\n  JS crawling complete.")
+
+
+# ---------------------------------------------------------------------------
+# Phase 9: Parameter Discovery (paramspider)
+# ---------------------------------------------------------------------------
+
+def run_paramspider(host, timeout):
+    cmd = f"paramspider -d {host} --quiet 2>/dev/null"
+    stdout, stderr, rc = wsl_run(cmd, timeout)
+    if stdout:
+        return [line.strip() for line in stdout.splitlines() if line.strip() and line.startswith("http")]
+    return []
+
+
+def discover_params(hosts, timeout):
+    """Discover URL parameters with paramspider."""
+    section("Parameter Discovery (paramspider)", 10)
+
+    if not prompt_yn("Run parameter discovery with paramspider?"):
+        print("  Skipping parameter discovery.")
+        return
+
+    scannable = {h: v for h, v in hosts.items() if v.get("allow_dir_scan") and not h.startswith(".")}
+
+    if not scannable:
+        print("  No hosts eligible for parameter discovery.")
+        return
+
+    print(f"  Scanning {len(scannable)} host(s)...\n")
+
+    for hostname in sorted(scannable):
+        print(f"  [{hostname}]")
+        results = run_paramspider(hostname, timeout)
+
+        if results:
+            print(f"    Found {len(results)} parameterized URLs:")
+            for url in results[:30]:
+                print(f"      {url}")
+            if len(results) > 30:
+                print(f"      ... and {len(results) - 30} more (see report)")
+        else:
+            print(f"    No parameterized URLs found.")
+
+        scannable[hostname]["results"]["params"] = results
+
+    print(f"\n  Parameter discovery complete.")
+
+
+# ---------------------------------------------------------------------------
+# Phase 10: Nuclei Vulnerability Scanning
+# ---------------------------------------------------------------------------
+
+def run_nuclei(host, timeout, templates):
+    url = f"https://{host}"
+    template_flag = f"-t {templates}" if templates else ""
+    cmd = f"nuclei -u {url} -silent {template_flag} 2>/dev/null"
+    stdout, stderr, rc = wsl_run(cmd, timeout)
+    if stdout:
+        return [line.strip() for line in stdout.splitlines() if line.strip()]
+    return []
+
+
+def nuclei_scan(hosts, timeout):
+    """Run nuclei vulnerability scanning."""
+    section("Nuclei Vulnerability Scanning", 11)
+
+    print("  \033[93mNote: Nuclei sends active probes. Ensure this is in scope.\033[0m\n")
+    if not prompt_yn("Run nuclei vulnerability scanning?"):
+        print("  Skipping nuclei scanning.")
+        return
+
+    print("\n  Select template categories:\n")
+    print("    [1] Safe only          (misconfigs, exposures, info)")
+    print("    [2] Medium risk        (safe + CVEs, default-logins)")
+    print("    [3] All templates      (includes fuzzing - noisy)")
+    print("    [4] Custom path")
+    print()
+
+    while True:
+        choice = input("  Templates [1-4]: ").strip()
+        if choice == "1":
+            templates = "misconfiguration,exposure,miscellaneous"
+            break
+        elif choice == "2":
+            templates = "misconfiguration,exposure,cves,default-logins,miscellaneous"
+            break
+        elif choice == "3":
+            templates = ""
+            break
+        elif choice == "4":
+            templates = input("  Enter template path or tags: ").strip()
+            break
+        else:
+            print("  Invalid choice. Enter 1-4.")
+
+    template_flag = f"-tags {templates}" if templates else ""
+
+    scannable = {h: v for h, v in hosts.items() if not h.startswith(".") and h != "__httpx_results" and h != "__screenshot_results"}
+
+    print(f"\n  Scanning {len(scannable)} host(s)...\n")
+
+    for hostname in sorted(scannable):
+        print(f"  [{hostname}]")
+        url = f"https://{hostname}"
+        cmd = f"nuclei -u {url} -silent {template_flag} 2>/dev/null"
+        stdout, stderr, rc = wsl_run(cmd, timeout)
+
+        results = [line.strip() for line in stdout.splitlines() if line.strip()] if stdout else []
+
+        if results:
+            print(f"    \033[91mFound {len(results)} issue(s):\033[0m")
+            for finding in results:
+                print(f"      {finding}")
+        else:
+            print(f"    No issues found.")
+
+        scannable[hostname]["results"]["nuclei"] = results
+
+    print(f"\n  Nuclei scanning complete.")
 
 def write_report(hosts, scope_file, output_path):
     """Write a markdown report with all results."""
@@ -630,6 +910,77 @@ def write_report(hosts, scope_file, output_path):
                 lines.append("No files found.")
             lines.append("")
 
+    # httpx results
+    httpx_data = hosts.get("__httpx_results", {}).get("results", {}).get("httpx", [])
+    if httpx_data:
+        lines.extend(["## Live Host Probing (httpx)", ""])
+        for line in httpx_data:
+            lines.append(f"- `{line}`")
+        lines.append("")
+
+    # Screenshot results
+    ss_data = hosts.get("__screenshot_results", {}).get("results", {}).get("screenshots", {})
+    if ss_data:
+        lines.extend([
+            "## Screenshots (gowitness)",
+            "",
+            f"Screenshots saved to: `{ss_data.get('output_dir', 'N/A')}`",
+            f"Targets screenshotted: {len(ss_data.get('count', []))}",
+            "",
+        ])
+
+    # Katana JS crawl results
+    katana_hosts = {h: v for h, v in scannable.items() if "katana" in v.get("results", {})}
+    if katana_hosts:
+        lines.extend(["## JavaScript Crawling (katana)", ""])
+        for hostname in sorted(katana_hosts):
+            katana = katana_hosts[hostname]["results"]["katana"]
+            lines.append(f"### {hostname}")
+            lines.append("")
+            if katana.get("js_files"):
+                lines.append("**JS Files:**")
+                for f in katana["js_files"]:
+                    lines.append(f"- `{f}`")
+                lines.append("")
+            if katana.get("api_endpoints"):
+                lines.append("**API Endpoints:**")
+                for ep in katana["api_endpoints"]:
+                    lines.append(f"- `{ep}`")
+                lines.append("")
+            if not katana.get("js_files") and not katana.get("api_endpoints"):
+                lines.append(f"No JS files or API endpoints found. ({len(katana.get('all_urls', []))} URLs crawled)")
+                lines.append("")
+
+    # Parameter discovery results
+    param_hosts = {h: v for h, v in scannable.items() if "params" in v.get("results", {})}
+    if param_hosts:
+        lines.extend(["## Parameter Discovery (paramspider)", ""])
+        for hostname in sorted(param_hosts):
+            params = param_hosts[hostname]["results"]["params"]
+            lines.append(f"### {hostname}")
+            lines.append("")
+            if params:
+                for url in params:
+                    lines.append(f"- `{url}`")
+            else:
+                lines.append("No parameterized URLs found.")
+            lines.append("")
+
+    # Nuclei results
+    nuclei_hosts = {h: v for h, v in scannable.items() if "nuclei" in v.get("results", {})}
+    if nuclei_hosts:
+        lines.extend(["## Nuclei Vulnerability Scanning", ""])
+        for hostname in sorted(nuclei_hosts):
+            findings = nuclei_hosts[hostname]["results"]["nuclei"]
+            lines.append(f"### {hostname}")
+            lines.append("")
+            if findings:
+                for finding in findings:
+                    lines.append(f"- `{finding}`")
+            else:
+                lines.append("No issues found.")
+            lines.append("")
+
     # Write file
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "w") as f:
@@ -693,8 +1044,23 @@ def main():
     # Phase 5: File scanning
     scan_files(hosts, args.scan_timeout, speed)
 
+    # Phase 6: Live host probing
+    probe_live_hosts(hosts, args.scan_timeout)
+
+    # Phase 7: Screenshots
+    screenshot_hosts(hosts, args.scan_timeout)
+
+    # Phase 8: JS crawling
+    crawl_js(hosts, args.scan_timeout)
+
+    # Phase 9: Parameter discovery
+    discover_params(hosts, args.scan_timeout)
+
+    # Phase 10: Nuclei scanning
+    nuclei_scan(hosts, args.scan_timeout)
+
     # Write report
-    section("Report", 7)
+    section("Report", 12)
     write_report(hosts, scope_file, args.output)
 
     print("\n  Recon complete.\n")

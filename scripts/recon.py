@@ -402,13 +402,14 @@ def parse_ffuf_output(stdout):
     """Parse ffuf output lines into list of (path, status_code) tuples."""
     results = []
     for line in stdout.splitlines():
-        line = line.strip()
-        if not line or "[Status:" not in line:
+        if "[Status:" not in line:
             continue
-        # Format: /path  [Status: 200, Size: 1234, Words: 56, Lines: 12, Duration: 123ms]
-        match = re.match(r"^(\S+)\s+\[Status:\s*(\d+)", line)
+        # Format: path  [Status: 200, Size: 1234, Words: 56, Lines: 12, Duration: 123ms]
+        # Root path has no prefix, just whitespace before [Status:
+        match = re.match(r"^(\S*)\s*\[Status:\s*(\d+)", line.strip())
         if match:
-            results.append((match.group(1), int(match.group(2))))
+            path = match.group(1) if match.group(1) else "/"
+            results.append((path, int(match.group(2))))
     return results
 
 
@@ -1010,7 +1011,7 @@ def main():
     parser.add_argument("-o", "--output", default="./recon-report.md", help="Markdown report output path")
     parser.add_argument("-t", "--timeout", type=int, default=DEFAULT_TIMEOUT, help="Request timeout in seconds")
     parser.add_argument("--delay", type=float, default=DEFAULT_DELAY, help="Delay between hosts in seconds")
-    parser.add_argument("--scan-timeout", type=int, default=300, help="Timeout for Kali tool commands in seconds")
+    parser.add_argument("--scan-timeout", type=int, default=600, help="Timeout for Kali tool commands in seconds")
     args = parser.parse_args()
 
     banner()

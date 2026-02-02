@@ -265,13 +265,13 @@ def proxy_load(hosts, proxy, timeout, delay):
         proxy_result = info["results"].get("proxy", {})
         https_status = proxy_result.get("https", {}).get("status")
         http_status = proxy_result.get("http", {}).get("status")
-        if https_status == 403 or (https_status is None and http_status == 403):
+        if https_status in (403, 404) or (https_status is None and http_status in (403, 404)):
             info["allow_dir_scan"] = False
             info["allow_subdomain_scan"] = False
             blocked.append(hostname)
 
     if blocked:
-        print(f"\n  \033[93m{len(blocked)} host(s) returned 403 — excluded from dir/subdomain scanning:\033[0m")
+        print(f"\n  \033[93m{len(blocked)} host(s) returned 403/404 — excluded from dir/subdomain scanning:\033[0m")
         for h in sorted(blocked):
             print(f"    - {h}")
 

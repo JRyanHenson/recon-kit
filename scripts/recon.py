@@ -259,19 +259,18 @@ def proxy_load(hosts, proxy, timeout, delay):
         if i < total - 1:
             time.sleep(delay)
 
-    # Disable dir/subdomain scanning for hosts that returned 403
+    # Block hosts that returned 403/404 from all subsequent phases
     blocked = []
     for hostname, info in scannable.items():
         proxy_result = info["results"].get("proxy", {})
         https_status = proxy_result.get("https", {}).get("status")
         http_status = proxy_result.get("http", {}).get("status")
         if https_status in (403, 404) or (https_status is None and http_status in (403, 404)):
-            info["allow_dir_scan"] = False
-            info["allow_subdomain_scan"] = False
+            info["blocked"] = True
             blocked.append(hostname)
 
     if blocked:
-        print(f"\n  \033[93m{len(blocked)} host(s) returned 403/404 — excluded from dir/subdomain scanning:\033[0m")
+        print(f"\n  \033[93m{len(blocked)} host(s) returned 403/404 — excluded from all scanning phases:\033[0m")
         for h in sorted(blocked):
             print(f"    - {h}")
 
@@ -308,8 +307,12 @@ def fingerprint(hosts, timeout, speed):
         return
 
     _, nmap_timing, *_ = speed
-    scannable = {h: v for h, v in hosts.items() if not h.startswith(".")}
+    scannable = {h: v for h, v in hosts.items() if not h.startswith(".") and not v.get("blocked")}
     total = len(scannable)
+
+    if not total:
+        print("  No eligible hosts. Skipping.")
+        return
 
     for i, (hostname, info) in enumerate(sorted(scannable.items())):
         print(f"\n  [{i + 1}/{total}] {hostname}")
@@ -361,7 +364,7 @@ def enum_subdomains(hosts, timeout, speed):
     section("Subdomain Enumeration", 4)
 
     # Find hosts that allow subdomain scanning
-    eligible = {h: v for h, v in hosts.items() if v["allow_subdomain_scan"] and not h.startswith(".")}
+    eligible = {h: v for h, v in hosts.items() if v["allow_subdomain_scan"] and not h.startswith(".") and not v.get("blocked")}
 
     # Also check wildcard entries for base domains
     wildcards = {h.lstrip("."): v for h, v in hosts.items() if h.startswith(".")}
@@ -466,7 +469,7 @@ def scan_directories(hosts, timeout, speed):
     """Run directory scanning on eligible hosts."""
     section("Directory Scanning", 5)
 
-    eligible = {h: v for h, v in hosts.items() if v["allow_dir_scan"] and not h.startswith(".")}
+    eligible = {h: v for h, v in hosts.items() if v["allow_dir_scan"] and not h.startswith(".") and not v.get("blocked")}
 
     if not eligible:
         print("  No hosts allow directory scanning. Skipping.")
@@ -515,7 +518,7 @@ def scan_files(hosts, timeout, speed):
     """Run file scanning on eligible hosts."""
     section("File Scanning", 6)
 
-    eligible = {h: v for h, v in hosts.items() if v["allow_dir_scan"] and not h.startswith(".")}
+    eligible = {h: v for h, v in hosts.items() if v["allow_dir_scan"] and not h.startswith(".") and not v.get("blocked")}
 
     if not eligible:
         print("  No hosts allow file scanning. Skipping.")
@@ -572,7 +575,7 @@ def probe_live_hosts(hosts, timeout):
 
     # Collect all hosts + discovered subdomains
     all_targets = []
-    scannable = {h: v for h, v in hosts.items() if not h.startswith(".")}
+    scannable = {h: v for h, v in hosts.items() if not h.startswith(".") and not v.get("blocked")}
     for hostname in sorted(scannable):
         all_targets.append(hostname)
 
@@ -618,7 +621,7 @@ def screenshot_hosts(hosts, timeout):
 
     # Collect all targets
     all_targets = []
-    scannable = {h: v for h, v in hosts.items() if not h.startswith(".") and h != "__httpx_results"}
+    scannable = {h: v for h, v in hosts.items() if not h.startswith(".") and h != "__httpx_results" and not v.get("blocked")}
     for hostname in sorted(scannable):
         all_targets.append(f"https://{hostname}")
 
@@ -667,7 +670,7 @@ def crawl_js(hosts, timeout):
         print("  Skipping JS crawling.")
         return
 
-    scannable = {h: v for h, v in hosts.items() if v.get("allow_dir_scan") and not h.startswith(".")}
+    scannable = {h: v for h, v in hosts.items() if v.get("allow_dir_scan") and not h.startswith(".") and not v.get("blocked")}
 
     if not scannable:
         print("  No hosts eligible for crawling.")
@@ -728,7 +731,7 @@ def discover_params(hosts, timeout):
         print("  Skipping parameter discovery.")
         return
 
-    scannable = {h: v for h, v in hosts.items() if v.get("allow_dir_scan") and not h.startswith(".")}
+    scannable = {h: v for h, v in hosts.items() if v.get("allow_dir_scan") and not h.startswith(".") and not v.get("blocked")}
 
     if not scannable:
         print("  No hosts eligible for parameter discovery.")
@@ -803,7 +806,7 @@ def nuclei_scan(hosts, timeout):
 
     template_flag = f"-tags {templates}" if templates else ""
 
-    scannable = {h: v for h, v in hosts.items() if not h.startswith(".") and h != "__httpx_results" and h != "__screenshot_results"}
+    scannable = {h: v for h, v in hosts.items() if not h.startswith(".") and h != "__httpx_results" and h != "__screenshot_results" and not v.get("blocked")}
 
     print(f"\n  Scanning {len(scannable)} host(s)...\n")
 

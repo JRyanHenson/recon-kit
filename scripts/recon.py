@@ -436,8 +436,9 @@ def parse_ffuf_output(stdout):
 def run_ffuf_dir(host, wordlist, timeout, ffuf_rate=0, ffuf_threads=20, status_codes="200,204,301,302,307,401,403"):
     url = f"https://{host}/FUZZ"
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
-    cmd = f"ffuf -u {url} -w {wordlist} -mc {status_codes} -t {ffuf_threads} {rate_flag} -noninteractive 2>/dev/null"
-    stdout, stderr, rc = wsl_run(cmd, timeout)
+    # Use ffuf's -maxtime instead of subprocess timeout (more reliable on Windows/WSL)
+    cmd = f"ffuf -u {url} -w {wordlist} -mc {status_codes} -t {ffuf_threads} {rate_flag} -maxtime {timeout} -noninteractive"
+    stdout, stderr, rc = wsl_run(cmd, timeout + 60)
     return parse_ffuf_output(stdout), stdout, stderr
 
 
@@ -515,13 +516,12 @@ def run_ffuf_files(host, wordlist, extensions, timeout, ffuf_rate=0, ffuf_thread
     url = f"https://{host}/FUZZ"
     ext_list = ",".join(f".{e}" for e in extensions.split(","))
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
-    cmd = f"ffuf -u {url} -w {wordlist} -e {ext_list} -mc {status_codes} -t {ffuf_threads} {rate_flag} -noninteractive"
-    print(f"    \033[90m[DEBUG] cmd: {cmd[:100]}...\033[0m")
-    print(f"    \033[90m[DEBUG] timeout: {timeout}s\033[0m")
-    stdout, stderr, rc = wsl_run(cmd, timeout)
+    # Use ffuf's -maxtime instead of subprocess timeout (more reliable on Windows/WSL)
+    cmd = f"ffuf -u {url} -w {wordlist} -e {ext_list} -mc {status_codes} -t {ffuf_threads} {rate_flag} -maxtime {timeout} -noninteractive"
+    print(f"    \033[90m[DEBUG] cmd: {cmd[:120]}...\033[0m")
+    # Use very long subprocess timeout since ffuf handles its own timing
+    stdout, stderr, rc = wsl_run(cmd, timeout + 60)
     print(f"    \033[90m[DEBUG] rc: {rc}, stdout len: {len(stdout)}, stderr len: {len(stderr)}\033[0m")
-    if stderr and len(stderr) < 500:
-        print(f"    \033[90m[DEBUG] stderr: {stderr}\033[0m")
     return parse_ffuf_output(stdout), stdout, stderr
 
 

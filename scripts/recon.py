@@ -531,21 +531,57 @@ def scan_files(hosts, timeout, speed):
         return
 
     print(f"  {len(eligible)} host(s) eligible for file scanning.")
-    num_extensions = len(FILE_EXTENSIONS.split(","))
-    print(f"  \033[93mNote: File scanning tests {num_extensions} extensions per path — this takes much longer than directory scanning.\033[0m")
-    if not prompt_yn("Run file scanning?"):
+    print(f"  \033[93mNote: More extensions = much longer scan time.\033[0m\n")
+
+    print("  Select extension set:\n")
+    print("    [1] Common (5)        - txt,bak,conf,log,xml")
+    print("    [2] Web (8)           - php,txt,bak,conf,log,xml,json,env")
+    print("    [3] IIS/ASP (7)       - asp,aspx,ashx,asmx,svc,config,txt")
+    print("    [4] All (19)          - full extension list")
+    print("    [5] Custom            - enter your own")
+    print()
+
+    while True:
+        ext_choice = input("  Extensions [1-5]: ").strip()
+        if ext_choice == "1":
+            extensions = "txt,bak,conf,log,xml"
+            break
+        elif ext_choice == "2":
+            extensions = "php,txt,bak,conf,log,xml,json,env"
+            break
+        elif ext_choice == "3":
+            extensions = "asp,aspx,ashx,asmx,svc,config,txt"
+            break
+        elif ext_choice == "4":
+            extensions = FILE_EXTENSIONS
+            break
+        elif ext_choice == "5":
+            extensions = input("  Enter comma-separated extensions (no dots): ").strip()
+            break
+        else:
+            print("  Invalid choice. Enter 1-5.")
+
+    num_extensions = len(extensions.split(","))
+    print(f"  Using {num_extensions} extensions: {extensions}\n")
+
+    if not prompt_yn("Proceed with file scanning?"):
         print("  Skipping file scanning.")
         return
 
     status_codes = prompt_status_codes()
     _, _, ffuf_rate, ffuf_threads, _ = speed
 
-    # File scanning needs longer timeout due to many more requests
-    file_timeout = timeout * 3
+    # Estimate timeout based on requests and speed
+    # Wordlist has ~4600 entries, each tested with N extensions
+    estimated_requests = 4600 * num_extensions
+    effective_rate = ffuf_rate if ffuf_rate > 0 else 100  # assume ~100 req/s if no limit
+    estimated_seconds = (estimated_requests / effective_rate) * 1.5  # 1.5x buffer
+    file_timeout = max(timeout, int(estimated_seconds))
+    print(f"  \033[90m(Timeout: {file_timeout // 60} min for ~{estimated_requests} requests)\033[0m\n")
 
     for hostname in sorted(eligible):
-        print(f"\n  Scanning {hostname} for files ({FILE_EXTENSIONS})...")
-        results, raw_stdout, raw_stderr = run_ffuf_files(hostname, DIR_WORDLIST, FILE_EXTENSIONS, file_timeout, ffuf_rate, ffuf_threads, status_codes)
+        print(f"\n  Scanning {hostname} for files ({extensions})...")
+        results, raw_stdout, raw_stderr = run_ffuf_files(hostname, DIR_WORDLIST, extensions, file_timeout, ffuf_rate, ffuf_threads, status_codes)
 
         if results:
             print(f"    Found {len(results)} files:")

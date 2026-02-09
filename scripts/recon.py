@@ -701,15 +701,22 @@ def screenshot_hosts(hosts, timeout):
     targets_str = "\\n".join(all_targets)
     print(f"\n  Screenshotting {len(all_targets)} targets...")
 
-    cmd = f"mkdir -p {output_dir} && echo -e '{targets_str}' | gowitness scan file -f - --screenshot-path {output_dir} 2>/dev/null"
+    # gowitness v2.x syntax
+    cmd = f"mkdir -p {output_dir} && echo -e '{targets_str}' | gowitness scan -f - --screenshot-path {output_dir}"
+    if DEBUG:
+        print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
     stdout, stderr, rc = wsl_run(cmd, timeout)
+    if DEBUG:
+        print(f"    \033[90m[DEBUG] rc: {rc}, stdout len: {len(stdout)}, stderr len: {len(stderr)}\033[0m")
+        if stderr:
+            print(f"    \033[90m[DEBUG] stderr: {stderr[:500]}\033[0m")
 
-    if rc == 0:
-        # Count screenshots
-        count_stdout, _, _ = wsl_run(f"ls {output_dir}/*.png 2>/dev/null | wc -l", 10)
-        count = count_stdout.strip() if count_stdout else "0"
-        print(f"    {count} screenshots saved to {output_dir}")
-    else:
+    # Count screenshots
+    count_stdout, _, _ = wsl_run(f"ls {output_dir}/*.png 2>/dev/null | wc -l", 10)
+    count = count_stdout.strip() if count_stdout else "0"
+    print(f"    {count} screenshots saved to {output_dir}")
+
+    if rc != 0 and stderr:
         print(f"    \033[91mgowitness error: {stderr[:200]}\033[0m")
 
     hosts["__screenshot_results"] = {"results": {"screenshots": {"output_dir": output_dir, "count": all_targets}}, "hostname": "__screenshots", "allow_dir_scan": False, "allow_subdomain_scan": False}

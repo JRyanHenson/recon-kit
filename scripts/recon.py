@@ -715,7 +715,8 @@ def screenshot_hosts(hosts, timeout):
     print(f"\n  Screenshotting {len(all_targets)} targets...")
 
     # gowitness syntax: scan file -f - for stdin input
-    cmd = f"mkdir -p {output_dir} && echo -e '{targets_str}' | gowitness scan file -f - --screenshot-path {output_dir}"
+    # --write-screenshots ensures screenshots are saved, --screenshot-path sets location
+    cmd = f"mkdir -p {output_dir} && echo -e '{targets_str}' | gowitness scan file -f - --write-screenshots --screenshot-path {output_dir}"
     if DEBUG:
         print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
     stdout, stderr, rc = wsl_run(cmd, timeout)
@@ -1418,7 +1419,7 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
         print(f"\n  [Screenshot]")
         output_dir = settings.get("screenshot_dir", "/tmp/gowitness")
         url = f"https://{hostname}"
-        cmd = f"mkdir -p {output_dir} && echo '{url}' | gowitness scan file -f - --screenshot-path {output_dir}"
+        cmd = f"mkdir -p {output_dir} && echo '{url}' | gowitness scan file -f - --write-screenshots --screenshot-path {output_dir}"
         stdout, stderr, rc = wsl_run(cmd, scan_timeout)
         if rc == 0:
             print(f"    Saved to {output_dir}")

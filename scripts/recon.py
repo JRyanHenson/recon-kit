@@ -102,6 +102,7 @@ def wsl_run(cmd, timeout=120):
             capture_output=True,
             text=True,
             timeout=timeout,
+            stdin=subprocess.DEVNULL,
         )
         return result.stdout.strip(), result.stderr.strip(), result.returncode
     except subprocess.TimeoutExpired:
@@ -437,7 +438,7 @@ def run_ffuf_dir(host, wordlist, timeout, ffuf_rate=0, ffuf_threads=20, status_c
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
     cmd = f"ffuf -u {url} -w {wordlist} -mc {status_codes} -t {ffuf_threads} {rate_flag} -noninteractive 2>/dev/null"
     stdout, stderr, rc = wsl_run(cmd, timeout)
-    return parse_ffuf_output(stdout)
+    return parse_ffuf_output(stdout), stdout, stderr
 
 
 def prompt_status_codes(default="200,204,301,302,307,401,403"):
@@ -485,7 +486,7 @@ def scan_directories(hosts, timeout, speed):
 
     for hostname in sorted(eligible):
         print(f"\n  Scanning {hostname}...")
-        results = run_ffuf_dir(hostname, DIR_WORDLIST, timeout, ffuf_rate, ffuf_threads, status_codes)
+        results, raw_stdout, raw_stderr = run_ffuf_dir(hostname, DIR_WORDLIST, timeout, ffuf_rate, ffuf_threads, status_codes)
 
         if results:
             print(f"    Found {len(results)} entries:")
@@ -495,6 +496,11 @@ def scan_directories(hosts, timeout, speed):
                 print(f"      ... and {len(results) - 50} more (see report)")
         else:
             print(f"    No directories found.")
+            if raw_stdout:
+                print(f"    \033[93m[DEBUG] ffuf raw output (first 500 chars):\033[0m")
+                print(f"    {raw_stdout[:500]}")
+            if raw_stderr:
+                print(f"    \033[93m[DEBUG] ffuf stderr:\033[0m {raw_stderr[:200]}")
 
         eligible[hostname]["results"]["directories"] = results
 
@@ -511,7 +517,7 @@ def run_ffuf_files(host, wordlist, extensions, timeout, ffuf_rate=0, ffuf_thread
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
     cmd = f"ffuf -u {url} -w {wordlist} -e {ext_list} -mc {status_codes} -t {ffuf_threads} {rate_flag} -noninteractive 2>/dev/null"
     stdout, stderr, rc = wsl_run(cmd, timeout)
-    return parse_ffuf_output(stdout)
+    return parse_ffuf_output(stdout), stdout, stderr
 
 
 def scan_files(hosts, timeout, speed):
@@ -534,7 +540,7 @@ def scan_files(hosts, timeout, speed):
 
     for hostname in sorted(eligible):
         print(f"\n  Scanning {hostname} for files ({FILE_EXTENSIONS})...")
-        results = run_ffuf_files(hostname, DIR_WORDLIST, FILE_EXTENSIONS, timeout, ffuf_rate, ffuf_threads, status_codes)
+        results, raw_stdout, raw_stderr = run_ffuf_files(hostname, DIR_WORDLIST, FILE_EXTENSIONS, timeout, ffuf_rate, ffuf_threads, status_codes)
 
         if results:
             print(f"    Found {len(results)} files:")
@@ -544,6 +550,11 @@ def scan_files(hosts, timeout, speed):
                 print(f"      ... and {len(results) - 50} more (see report)")
         else:
             print(f"    No files found.")
+            if raw_stdout:
+                print(f"    \033[93m[DEBUG] ffuf raw output (first 500 chars):\033[0m")
+                print(f"    {raw_stdout[:500]}")
+            if raw_stderr:
+                print(f"    \033[93m[DEBUG] ffuf stderr:\033[0m {raw_stderr[:200]}")
 
         eligible[hostname]["results"]["files"] = results
 

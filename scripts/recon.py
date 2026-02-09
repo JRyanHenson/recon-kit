@@ -37,6 +37,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+DEBUG = False  # Set via --debug flag
 WSL_DISTRO = "kali"
 DEFAULT_PROXY = "127.0.0.1:8080"
 DEFAULT_TIMEOUT = 10
@@ -96,6 +97,8 @@ def prompt_speed():
 def wsl_run(cmd, timeout=120):
     """Run a command in Kali WSL and return stdout."""
     full_cmd = ["wsl", "-d", WSL_DISTRO, "--", "bash", "-c", cmd]
+    if DEBUG:
+        print(f"    \033[90m[DEBUG] wsl_run timeout: {timeout}s\033[0m")
     try:
         result = subprocess.run(
             full_cmd,
@@ -106,6 +109,8 @@ def wsl_run(cmd, timeout=120):
         )
         return result.stdout.strip(), result.stderr.strip(), result.returncode
     except subprocess.TimeoutExpired:
+        if DEBUG:
+            print(f"    \033[91m[DEBUG] subprocess.TimeoutExpired after {timeout}s\033[0m")
         return "", "Timeout", -1
     except FileNotFoundError:
         return "", "WSL not found. Is Kali WSL installed?", -1
@@ -497,11 +502,12 @@ def scan_directories(hosts, timeout, speed):
                 print(f"      ... and {len(results) - 50} more (see report)")
         else:
             print(f"    No directories found.")
-            if raw_stdout:
-                print(f"    \033[93m[DEBUG] ffuf raw output (first 500 chars):\033[0m")
-                print(f"    {raw_stdout[:500]}")
-            if raw_stderr:
-                print(f"    \033[93m[DEBUG] ffuf stderr:\033[0m {raw_stderr[:200]}")
+            if DEBUG:
+                if raw_stdout:
+                    print(f"    \033[90m[DEBUG] ffuf raw output (first 500 chars):\033[0m")
+                    print(f"    {raw_stdout[:500]}")
+                if raw_stderr:
+                    print(f"    \033[90m[DEBUG] ffuf stderr (first 200 chars):\033[0m {raw_stderr[:200]}")
 
         eligible[hostname]["results"]["directories"] = results
 
@@ -518,10 +524,14 @@ def run_ffuf_files(host, wordlist, extensions, timeout, ffuf_rate=0, ffuf_thread
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
     # Use ffuf's -maxtime instead of subprocess timeout (more reliable on Windows/WSL)
     cmd = f"ffuf -u {url} -w {wordlist} -e {ext_list} -mc {status_codes} -t {ffuf_threads} {rate_flag} -maxtime {timeout} -noninteractive"
-    print(f"    \033[90m[DEBUG] cmd: {cmd[:120]}...\033[0m")
+    if DEBUG:
+        print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
     # Use very long subprocess timeout since ffuf handles its own timing
     stdout, stderr, rc = wsl_run(cmd, timeout + 60)
-    print(f"    \033[90m[DEBUG] rc: {rc}, stdout len: {len(stdout)}, stderr len: {len(stderr)}\033[0m")
+    if DEBUG:
+        print(f"    \033[90m[DEBUG] rc: {rc}, stdout len: {len(stdout)}, stderr len: {len(stderr)}\033[0m")
+        if stderr and len(stderr) < 1000:
+            print(f"    \033[90m[DEBUG] stderr: {stderr[:500]}\033[0m")
     return parse_ffuf_output(stdout), stdout, stderr
 
 
@@ -596,11 +606,12 @@ def scan_files(hosts, timeout, speed):
                 print(f"      ... and {len(results) - 50} more (see report)")
         else:
             print(f"    No files found.")
-            if raw_stdout:
-                print(f"    \033[93m[DEBUG] ffuf raw output (first 500 chars):\033[0m")
-                print(f"    {raw_stdout[:500]}")
-            if raw_stderr:
-                print(f"    \033[93m[DEBUG] ffuf stderr:\033[0m {raw_stderr[:200]}")
+            if DEBUG:
+                if raw_stdout:
+                    print(f"    \033[90m[DEBUG] ffuf raw output (first 500 chars):\033[0m")
+                    print(f"    {raw_stdout[:500]}")
+                if raw_stderr:
+                    print(f"    \033[90m[DEBUG] ffuf stderr (first 200 chars):\033[0m {raw_stderr[:200]}")
 
         eligible[hostname]["results"]["files"] = results
 
@@ -1088,7 +1099,14 @@ def main():
     parser.add_argument("-t", "--timeout", type=int, default=DEFAULT_TIMEOUT, help="Request timeout in seconds")
     parser.add_argument("--delay", type=float, default=DEFAULT_DELAY, help="Delay between hosts in seconds")
     parser.add_argument("--scan-timeout", type=int, default=600, help="Timeout for Kali tool commands in seconds")
+    parser.add_argument("--debug", action="store_true", help="Enable debug output")
     args = parser.parse_args()
+
+    # Set global debug flag
+    global DEBUG
+    DEBUG = args.debug
+    if DEBUG:
+        print("  \033[93m[DEBUG MODE ENABLED]\033[0m\n")
 
     banner()
 

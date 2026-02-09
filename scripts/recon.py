@@ -626,8 +626,15 @@ def run_httpx(hosts_list, timeout):
     """Run httpx on a list of hosts and return parsed results."""
     # Write hosts to a temp file for httpx input
     hosts_str = "\\n".join(hosts_list)
-    cmd = f"echo -e '{hosts_str}' | httpx -silent -status-code -title -tech-detect -follow-redirects 2>/dev/null"
+    cmd = f"echo -e '{hosts_str}' | httpx -silent -status-code -title -tech-detect -follow-redirects"
+    if DEBUG:
+        print(f"    \033[90m[DEBUG] httpx targets: {hosts_list}\033[0m")
+        print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
     stdout, stderr, rc = wsl_run(cmd, timeout)
+    if DEBUG:
+        print(f"    \033[90m[DEBUG] rc: {rc}, stdout len: {len(stdout)}, stderr len: {len(stderr)}\033[0m")
+        if stderr and len(stderr) < 500:
+            print(f"    \033[90m[DEBUG] stderr: {stderr}\033[0m")
     if stdout:
         return [line.strip() for line in stdout.splitlines() if line.strip()]
     return []
@@ -683,9 +690,15 @@ def screenshot_hosts(hosts, timeout):
         print("  Skipping screenshots.")
         return
 
+    print("  \033[90m(Use Linux path like /tmp/gowitness or /mnt/c/Users/... for Windows folders)\033[0m")
     output_dir = input("  Screenshot output directory (default: /tmp/gowitness): ").strip()
     if not output_dir:
         output_dir = "/tmp/gowitness"
+    # Convert Windows paths to WSL paths
+    if output_dir.startswith("C:") or output_dir.startswith("c:"):
+        output_dir = "/mnt/c" + output_dir[2:].replace("\\", "/")
+    elif output_dir.startswith("D:") or output_dir.startswith("d:"):
+        output_dir = "/mnt/d" + output_dir[2:].replace("\\", "/")
 
     # Collect all targets
     all_targets = []
@@ -701,8 +714,8 @@ def screenshot_hosts(hosts, timeout):
     targets_str = "\\n".join(all_targets)
     print(f"\n  Screenshotting {len(all_targets)} targets...")
 
-    # gowitness v2.x syntax
-    cmd = f"mkdir -p {output_dir} && echo -e '{targets_str}' | gowitness scan -f - --screenshot-path {output_dir}"
+    # gowitness syntax: scan file -f - for stdin input
+    cmd = f"mkdir -p {output_dir} && echo -e '{targets_str}' | gowitness scan file -f - --screenshot-path {output_dir}"
     if DEBUG:
         print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
     stdout, stderr, rc = wsl_run(cmd, timeout)

@@ -515,8 +515,13 @@ def run_ffuf_files(host, wordlist, extensions, timeout, ffuf_rate=0, ffuf_thread
     url = f"https://{host}/FUZZ"
     ext_list = ",".join(f".{e}" for e in extensions.split(","))
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
-    cmd = f"ffuf -u {url} -w {wordlist} -e {ext_list} -mc {status_codes} -t {ffuf_threads} {rate_flag} -noninteractive 2>/dev/null"
+    cmd = f"ffuf -u {url} -w {wordlist} -e {ext_list} -mc {status_codes} -t {ffuf_threads} {rate_flag} -noninteractive"
+    print(f"    \033[90m[DEBUG] cmd: {cmd[:100]}...\033[0m")
+    print(f"    \033[90m[DEBUG] timeout: {timeout}s\033[0m")
     stdout, stderr, rc = wsl_run(cmd, timeout)
+    print(f"    \033[90m[DEBUG] rc: {rc}, stdout len: {len(stdout)}, stderr len: {len(stderr)}\033[0m")
+    if stderr and len(stderr) < 500:
+        print(f"    \033[90m[DEBUG] stderr: {stderr}\033[0m")
     return parse_ffuf_output(stdout), stdout, stderr
 
 

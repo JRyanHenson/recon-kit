@@ -531,6 +531,8 @@ def scan_files(hosts, timeout, speed):
         return
 
     print(f"  {len(eligible)} host(s) eligible for file scanning.")
+    num_extensions = len(FILE_EXTENSIONS.split(","))
+    print(f"  \033[93mNote: File scanning tests {num_extensions} extensions per path — this takes much longer than directory scanning.\033[0m")
     if not prompt_yn("Run file scanning?"):
         print("  Skipping file scanning.")
         return
@@ -538,9 +540,12 @@ def scan_files(hosts, timeout, speed):
     status_codes = prompt_status_codes()
     _, _, ffuf_rate, ffuf_threads, _ = speed
 
+    # File scanning needs longer timeout due to many more requests
+    file_timeout = timeout * 3
+
     for hostname in sorted(eligible):
         print(f"\n  Scanning {hostname} for files ({FILE_EXTENSIONS})...")
-        results, raw_stdout, raw_stderr = run_ffuf_files(hostname, DIR_WORDLIST, FILE_EXTENSIONS, timeout, ffuf_rate, ffuf_threads, status_codes)
+        results, raw_stdout, raw_stderr = run_ffuf_files(hostname, DIR_WORDLIST, FILE_EXTENSIONS, file_timeout, ffuf_rate, ffuf_threads, status_codes)
 
         if results:
             print(f"    Found {len(results)} files:")

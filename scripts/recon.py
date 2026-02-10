@@ -1420,11 +1420,21 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
         output_dir = settings.get("screenshot_dir", "/tmp/gowitness")
         url = f"https://{hostname}"
         cmd = f"mkdir -p {output_dir} && echo '{url}' | gowitness scan file -f - --write-screenshots --screenshot-path {output_dir}"
+        if DEBUG:
+            print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
         stdout, stderr, rc = wsl_run(cmd, scan_timeout)
-        if rc == 0:
-            print(f"    Saved to {output_dir}")
-        else:
-            print(f"    \033[91mError: {stderr[:100]}\033[0m")
+        if DEBUG:
+            print(f"    \033[90m[DEBUG] rc: {rc}, stdout: {len(stdout)}, stderr: {len(stderr)}\033[0m")
+            if stdout:
+                print(f"    \033[90m[DEBUG] stdout: {stdout[:300]}\033[0m")
+            if stderr:
+                print(f"    \033[90m[DEBUG] stderr: {stderr[:500]}\033[0m")
+        # Check what was actually saved
+        count_stdout, _, _ = wsl_run(f"find {output_dir} -name '*.png' -o -name '*.jpeg' -o -name '*.jpg' 2>/dev/null | wc -l", 10)
+        count = count_stdout.strip() if count_stdout else "0"
+        print(f"    {count} screenshot(s) saved to {output_dir}")
+        if rc != 0:
+            print(f"    \033[91mError: {stderr[:200]}\033[0m")
 
     # Katana
     if settings.get("katana") and info.get("allow_dir_scan") and not info.get("blocked"):

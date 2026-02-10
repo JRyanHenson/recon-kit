@@ -1102,7 +1102,7 @@ def write_report(hosts, scope_file, output_path):
 
     # Write file
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
     print(f"\n  Report saved to: {output_path}")
@@ -1212,7 +1212,7 @@ def write_host_report(hostname, info, output_dir):
 
     # Write file
     os.makedirs(output_dir, exist_ok=True)
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
     return output_path

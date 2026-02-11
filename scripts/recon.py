@@ -896,7 +896,7 @@ def run_nuclei(host, timeout, templates, use_automatic=False):
         if rc != 0:
             print(f"    \033[90m[DEBUG] nuclei may have failed\033[0m")
     if stdout:
-        return [line.strip() for line in stdout.splitlines() if line.strip()]
+        return [strip_ansi(line.strip()) for line in stdout.splitlines() if line.strip()]
     return []
 
 
@@ -946,7 +946,7 @@ def nuclei_scan(hosts, timeout):
         cmd = f"nuclei -u {url} -silent {template_flag}"
         stdout, stderr, rc = wsl_run(cmd, timeout)
 
-        results = [line.strip() for line in stdout.splitlines() if line.strip()] if stdout else []
+        results = [strip_ansi(line.strip()) for line in stdout.splitlines() if line.strip()] if stdout else []
 
         if results:
             print(f"    \033[91mFound {len(results)} issue(s):\033[0m")

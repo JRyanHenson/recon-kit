@@ -20,6 +20,7 @@ Results output to terminal and markdown report.
 """
 
 import argparse
+import glob
 import json
 import os
 import re
@@ -49,6 +50,8 @@ FILE_EXTENSIONS = "php,txt,bak,conf,log,xml,json,env,old,zip,asp,aspx,ashx,asmx,
 HUNTS_BASE_DIR = r"C:\Users\p7snkx7mvj\Desktop\Hunts"
 # WSL-translated path for tools that run in Kali
 HUNTS_BASE_DIR_WSL = "/mnt/c/Users/p7snkx7mvj/Desktop/Hunts"
+# Downloads folder to check for scope files
+DOWNLOADS_DIR = r"C:\Users\p7snkx7mvj\Downloads"
 
 # Speed profiles: (label, nmap_timing, ffuf_rate, ffuf_threads, subfinder_rate_limit)
 SPEED_PROFILES = {
@@ -1511,7 +1514,31 @@ def main():
 
     scope_file = args.scope_file
     if not scope_file:
-        scope_file = input("  Enter path to Burp scope JSON: ").strip()
+        # Check Downloads folder for JSON files
+        json_files = glob.glob(os.path.join(DOWNLOADS_DIR, "*.json"))
+        if json_files:
+            # Sort by modification time, newest first
+            json_files.sort(key=os.path.getmtime, reverse=True)
+            print(f"  Found JSON file(s) in Downloads:\n")
+            for i, f in enumerate(json_files[:5], 1):  # Show up to 5 most recent
+                fname = os.path.basename(f)
+                mtime = datetime.fromtimestamp(os.path.getmtime(f)).strftime("%Y-%m-%d %H:%M")
+                print(f"    [{i}] {fname}  ({mtime})")
+            print(f"    [0] Enter path manually")
+            print()
+            while True:
+                choice = input("  Select file [0-5]: ").strip()
+                if choice == "0":
+                    scope_file = input("  Enter path to Burp scope JSON: ").strip()
+                    break
+                elif choice.isdigit() and 1 <= int(choice) <= len(json_files[:5]):
+                    scope_file = json_files[int(choice) - 1]
+                    print(f"  Using: {scope_file}")
+                    break
+                else:
+                    print("  Invalid choice.")
+        else:
+            scope_file = input("  Enter path to Burp scope JSON: ").strip()
 
     try:
         hosts = parse_burp_scope(scope_file)

@@ -734,7 +734,7 @@ def screenshot_hosts(hosts, timeout):
     write_cmd = f"mkdir -p {output_dir} && cat > {urls_file} << 'URLS_EOF'\n{urls_content}\nURLS_EOF"
     wsl_run(write_cmd, 30)
 
-    cmd = f"gowitness scan file -f {urls_file} -s {output_dir} --write-none"
+    cmd = f"gowitness scan file -f {urls_file} -s {output_dir} --screenshot-fullpage --write-none"
     if DEBUG:
         print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
     stdout, stderr, rc = wsl_run(cmd, timeout)
@@ -1489,7 +1489,7 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
         write_cmd = f"mkdir -p {output_dir} && cat > {urls_file} << 'URLS_EOF'\n{urls_content}\nURLS_EOF"
         wsl_run(write_cmd, 30)
 
-        cmd = f"gowitness scan file -f {urls_file} -s {output_dir} --write-none"
+        cmd = f"gowitness scan file -f {urls_file} -s {output_dir} --screenshot-fullpage --write-none"
         if DEBUG:
             print(f"    \033[90m[DEBUG] URLs: {urls[:5]}{'...' if len(urls) > 5 else ''}\033[0m")
             print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")

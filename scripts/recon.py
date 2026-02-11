@@ -730,8 +730,8 @@ def screenshot_hosts(hosts, timeout):
     print(f"\n  Screenshotting {len(all_targets)} targets...")
 
     # gowitness syntax: scan file -f - for stdin input
-    # --write-screenshots ensures screenshots are saved, --screenshot-path sets location
-    cmd = f"mkdir -p {output_dir} && echo -e '{targets_str}' | gowitness scan file -f - --write-screenshots --screenshot-path {output_dir}"
+    # -s sets screenshot path, --write-none silences writer warnings
+    cmd = f"mkdir -p {output_dir} && echo -e '{targets_str}' | gowitness scan file -f - -s {output_dir} --write-none"
     if DEBUG:
         print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
     stdout, stderr, rc = wsl_run(cmd, timeout)
@@ -740,8 +740,8 @@ def screenshot_hosts(hosts, timeout):
         if stderr:
             print(f"    \033[90m[DEBUG] stderr: {stderr[:500]}\033[0m")
 
-    # Count screenshots
-    count_stdout, _, _ = wsl_run(f"ls {output_dir}/*.png 2>/dev/null | wc -l", 10)
+    # Count screenshots (gowitness defaults to jpeg format)
+    count_stdout, _, _ = wsl_run(f"ls {output_dir}/*.jpeg {output_dir}/*.jpg {output_dir}/*.png 2>/dev/null | wc -l", 10)
     count = count_stdout.strip() if count_stdout else "0"
     print(f"    {count} screenshots saved to {output_dir}")
 
@@ -1475,7 +1475,7 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
         print(f"    Screenshotting {len(urls)} URLs...")
 
         urls_str = "\\n".join(urls)
-        cmd = f"mkdir -p {output_dir} && echo -e '{urls_str}' | gowitness scan file -f - --write-screenshots --screenshot-path {output_dir}"
+        cmd = f"mkdir -p {output_dir} && echo -e '{urls_str}' | gowitness scan file -f - -s {output_dir} --write-none"
         if DEBUG:
             print(f"    \033[90m[DEBUG] URLs: {urls[:5]}{'...' if len(urls) > 5 else ''}\033[0m")
             print(f"    \033[90m[DEBUG] cmd: {cmd[:200]}...\033[0m")

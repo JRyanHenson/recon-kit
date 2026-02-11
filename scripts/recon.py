@@ -45,6 +45,11 @@ DEFAULT_DELAY = 1.0
 DIR_WORDLIST = "/usr/share/wordlists/dirb/common.txt"
 FILE_EXTENSIONS = "php,txt,bak,conf,log,xml,json,env,old,zip,asp,aspx,ashx,asmx,svc,config,cs,csproj,sln"
 
+# Base directory for hunt projects (Windows path)
+HUNTS_BASE_DIR = r"C:\Users\p7snkx7mvj\Desktop\Hunts"
+# WSL-translated path for tools that run in Kali
+HUNTS_BASE_DIR_WSL = "/mnt/c/Users/p7snkx7mvj/Desktop/Hunts"
+
 # Speed profiles: (label, nmap_timing, ffuf_rate, ffuf_threads, subfinder_rate_limit)
 SPEED_PROFILES = {
     "1": ("Stealth   (~10 req/s)",   "-T2", 10,  5,  5),
@@ -1274,17 +1279,6 @@ def collect_phase_settings(hosts, speed):
                 print("  Invalid choice. Enter 1-5.")
         settings["file_status_codes"] = prompt_status_codes()
 
-    if settings["screenshots"]:
-        print("\n  \033[90m(Use Linux path like /tmp/gowitness or /mnt/c/Users/... for Windows folders)\033[0m")
-        output_dir = input("  Screenshot output directory (default: /tmp/gowitness): ").strip()
-        if not output_dir:
-            output_dir = "/tmp/gowitness"
-        if output_dir.startswith("C:") or output_dir.startswith("c:"):
-            output_dir = "/mnt/c" + output_dir[2:].replace("\\", "/")
-        elif output_dir.startswith("D:") or output_dir.startswith("d:"):
-            output_dir = "/mnt/d" + output_dir[2:].replace("\\", "/")
-        settings["screenshot_dir"] = output_dir
-
     if settings["nuclei"]:
         print("\n  Select nuclei template category:\n")
         print("    [1] Safe only          (misconfigs, exposures, info)")
@@ -1532,6 +1526,26 @@ def main():
     print(f"\n  Parsed hosts:\n")
     display_hosts(hosts)
 
+    # Ask for project name and create project directory
+    section("Project Setup", "")
+    project_name = input("  Enter project name: ").strip()
+    if not project_name:
+        project_name = "untitled"
+    # Sanitize project name for filesystem
+    project_name = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in project_name)
+
+    # Create project directory structure
+    project_dir = os.path.join(HUNTS_BASE_DIR, project_name)
+    project_dir_wsl = f"{HUNTS_BASE_DIR_WSL}/{project_name}"
+    screenshots_dir_wsl = f"{project_dir_wsl}/screenshots"
+
+    os.makedirs(project_dir, exist_ok=True)
+    os.makedirs(os.path.join(project_dir, "screenshots"), exist_ok=True)
+
+    print(f"  Project directory: {project_dir}")
+    print(f"  Screenshots: {project_dir}\\screenshots")
+    print(f"  Reports: {project_dir}\\<hostname>.md")
+
     # Select scan speed
     section("Scan Speed", "")
     speed = prompt_speed()
@@ -1539,10 +1553,11 @@ def main():
     # Collect all phase settings upfront
     settings = collect_phase_settings(hosts, speed)
 
-    # Determine report output directory
-    report_dir = os.path.dirname(args.output) or "."
-    if not os.path.exists(report_dir):
-        os.makedirs(report_dir)
+    # Set screenshot directory to project screenshots folder
+    settings["screenshot_dir"] = screenshots_dir_wsl
+
+    # Set report directory to project folder
+    report_dir = project_dir
 
     # Process each host one at a time
     scannable = {h: v for h, v in hosts.items() if not h.startswith(".")}
@@ -1560,11 +1575,14 @@ def main():
 
     # Write combined report
     section("Final Report", 4)
-    write_report(hosts, scope_file, args.output)
+    combined_report_path = os.path.join(project_dir, "combined_report.md")
+    write_report(hosts, scope_file, combined_report_path)
 
     print("\n  Recon complete.\n")
-    print(f"  Individual reports: {report_dir}/<hostname>.md")
-    print(f"  Combined report: {args.output}\n")
+    print(f"  Project folder: {project_dir}")
+    print(f"  Individual reports: {project_dir}\\<hostname>.md")
+    print(f"  Combined report: {combined_report_path}")
+    print(f"  Screenshots: {project_dir}\\screenshots\n")
 
 
 if __name__ == "__main__":

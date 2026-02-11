@@ -726,12 +726,15 @@ def screenshot_hosts(hosts, timeout):
         for sub in subs:
             all_targets.append(f"https://{sub}")
 
-    targets_str = "\\n".join(all_targets)
     print(f"\n  Screenshotting {len(all_targets)} targets...")
 
-    # gowitness syntax: scan file -f - for stdin input
-    # -s sets screenshot path, --write-none silences writer warnings
-    cmd = f"mkdir -p {output_dir} && echo -e '{targets_str}' | gowitness scan file -f - -s {output_dir} --write-none"
+    # Write URLs to temp file (more reliable than echo -e piping)
+    urls_file = f"{output_dir}/urls.txt"
+    urls_content = "\n".join(all_targets)
+    write_cmd = f"mkdir -p {output_dir} && cat > {urls_file} << 'URLS_EOF'\n{urls_content}\nURLS_EOF"
+    wsl_run(write_cmd, 30)
+
+    cmd = f"gowitness scan file -f {urls_file} -s {output_dir} --write-none"
     if DEBUG:
         print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
     stdout, stderr, rc = wsl_run(cmd, timeout)
@@ -1480,11 +1483,16 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
 
         print(f"    Screenshotting {len(urls)} URLs...")
 
-        urls_str = "\\n".join(urls)
-        cmd = f"mkdir -p {output_dir} && echo -e '{urls_str}' | gowitness scan file -f - -s {output_dir} --write-none"
+        # Write URLs to temp file (more reliable than echo -e piping)
+        urls_file = f"{output_dir}/urls.txt"
+        urls_content = "\n".join(urls)
+        write_cmd = f"mkdir -p {output_dir} && cat > {urls_file} << 'URLS_EOF'\n{urls_content}\nURLS_EOF"
+        wsl_run(write_cmd, 30)
+
+        cmd = f"gowitness scan file -f {urls_file} -s {output_dir} --write-none"
         if DEBUG:
             print(f"    \033[90m[DEBUG] URLs: {urls[:5]}{'...' if len(urls) > 5 else ''}\033[0m")
-            print(f"    \033[90m[DEBUG] cmd: {cmd[:200]}...\033[0m")
+            print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
         stdout, stderr, rc = wsl_run(cmd, scan_timeout)
         if DEBUG:
             print(f"    \033[90m[DEBUG] rc: {rc}, stdout: {len(stdout)}, stderr: {len(stderr)}\033[0m")

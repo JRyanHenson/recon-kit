@@ -813,8 +813,16 @@ def crawl_js(hosts, timeout):
 # ---------------------------------------------------------------------------
 
 def run_paramspider(host, timeout):
-    cmd = f"paramspider -d {host} --quiet 2>/dev/null"
+    cmd = f"paramspider -d {host} --quiet"
+    if DEBUG:
+        print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
     stdout, stderr, rc = wsl_run(cmd, timeout)
+    if DEBUG:
+        print(f"    \033[90m[DEBUG] rc: {rc}, stdout: {len(stdout)}, stderr: {len(stderr)}\033[0m")
+        if stderr and len(stderr) < 300:
+            print(f"    \033[90m[DEBUG] stderr: {stderr}\033[0m")
+        if rc != 0:
+            print(f"    \033[90m[DEBUG] paramspider may have failed\033[0m")
     if stdout:
         return [line.strip() for line in stdout.splitlines() if line.strip() and line.startswith("http")]
     return []
@@ -860,9 +868,17 @@ def discover_params(hosts, timeout):
 
 def run_nuclei(host, timeout, templates):
     url = f"https://{host}"
-    template_flag = f"-t {templates}" if templates else ""
-    cmd = f"nuclei -u {url} -silent {template_flag} 2>/dev/null"
+    template_flag = f"-tags {templates}" if templates else ""
+    cmd = f"nuclei -u {url} -silent {template_flag}"
+    if DEBUG:
+        print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
     stdout, stderr, rc = wsl_run(cmd, timeout)
+    if DEBUG:
+        print(f"    \033[90m[DEBUG] rc: {rc}, stdout: {len(stdout)}, stderr: {len(stderr)}\033[0m")
+        if stderr and len(stderr) < 500:
+            print(f"    \033[90m[DEBUG] stderr: {stderr[:500]}\033[0m")
+        if rc != 0:
+            print(f"    \033[90m[DEBUG] nuclei may have failed\033[0m")
     if stdout:
         return [line.strip() for line in stdout.splitlines() if line.strip()]
     return []

@@ -132,7 +132,7 @@ def parse_burp_scope(path):
     """Parse Burp scope JSON and return a dict of host info.
 
     Returns:
-        dict: {hostname: {"allow_dir_scan": bool, "allow_subdomain_scan": bool, "results": {}}}
+        dict: {hostname: {"allow_dir_scan": bool, "allow_subdomain_scan": bool, "base_path": str, "results": {}}}
     """
     with open(path, "r") as f:
         data = json.load(f)
@@ -162,12 +162,20 @@ def parse_burp_scope(path):
                 "hostname": hostname,
                 "allow_dir_scan": False,
                 "allow_subdomain_scan": is_wildcard,
+                "base_path": "/",
                 "results": {},
             }
 
-        # If any entry for this host allows full path scanning
-        if file_pattern == "^/.*$":
+        # Check if file pattern allows directory scanning
+        # Patterns ending with .*$ allow scanning (e.g., ^/.*$, ^/srp2/.*$)
+        if file_pattern.endswith(".*$"):
             hosts[hostname]["allow_dir_scan"] = True
+            # Extract base path: ^/srp2/.*$ → /srp2/
+            base_path = file_pattern[1:-3]  # Remove ^ prefix and .*$ suffix
+            if base_path and not base_path.endswith("/"):
+                base_path += "/"
+            if base_path:
+                hosts[hostname]["base_path"] = base_path
 
         # If wildcard, mark subdomain scanning
         if is_wildcard:
@@ -185,7 +193,9 @@ def display_hosts(hosts):
     for hostname, info in sorted(display.items()):
         dirs = "\033[92m✓\033[0m" if info["allow_dir_scan"] else "\033[91m✗\033[0m"
         subs = "\033[92m✓\033[0m" if info["allow_subdomain_scan"] else "\033[91m✗\033[0m"
-        print(f"    {hostname:<{max_len + 2}} [dirs: {dirs}] [subs: {subs}]")
+        base_path = info.get("base_path", "/")
+        base_info = f" (base: {base_path})" if base_path != "/" else ""
+        print(f"    {hostname:<{max_len + 2}} [dirs: {dirs}] [subs: {subs}]{base_info}")
 
     dir_count = sum(1 for v in display.values() if v["allow_dir_scan"])
     sub_count = sum(1 for v in display.values() if v["allow_subdomain_scan"])
@@ -436,9 +446,10 @@ def strip_ansi(text):
     return re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', text)
 
 
-def parse_ffuf_output(stdout):
+def parse_ffuf_output(stdout, base_path="/"):
     """Parse ffuf output lines into list of (path, status_code) tuples."""
     results = []
+    base = base_path.rstrip("/")
     for line in stdout.splitlines():
         # Strip ANSI escape codes first
         line = strip_ansi(line)
@@ -448,18 +459,22 @@ def parse_ffuf_output(stdout):
         # Root path has no prefix, just whitespace before [Status:
         match = re.match(r"^(\S*)\s*\[Status:\s*(\d+)", line.strip())
         if match:
-            path = match.group(1) if match.group(1) else "/"
-            results.append((path, int(match.group(2))))
+            found_path = match.group(1) if match.group(1) else ""
+            # Prepend base path to results (e.g., /srp2 + /admin → /srp2/admin)
+            full_path = f"{base}/{found_path.lstrip('/')}" if found_path else base or "/"
+            results.append((full_path, int(match.group(2))))
     return results
 
 
-def run_ffuf_dir(host, wordlist, timeout, ffuf_rate=0, ffuf_threads=20, status_codes="200,204,301,302,307,401,403"):
-    url = f"https://{host}/FUZZ"
+def run_ffuf_dir(host, wordlist, timeout, ffuf_rate=0, ffuf_threads=20, status_codes="200,204,301,302,307,401,403", base_path="/"):
+    # Build URL with base path (e.g., /srp2/FUZZ instead of /FUZZ)
+    base = base_path.rstrip("/")
+    url = f"https://{host}{base}/FUZZ"
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
     # Use ffuf's -maxtime instead of subprocess timeout (more reliable on Windows/WSL)
     cmd = f"ffuf -u {url} -w {wordlist} -mc {status_codes} -t {ffuf_threads} {rate_flag} -maxtime {timeout} -noninteractive"
     stdout, stderr, rc = wsl_run(cmd, timeout + 60)
-    return parse_ffuf_output(stdout), stdout, stderr
+    return parse_ffuf_output(stdout, base_path), stdout, stderr
 
 
 def prompt_status_codes(default="200,204,301,302,307,401,403"):
@@ -506,8 +521,9 @@ def scan_directories(hosts, timeout, speed):
     _, _, ffuf_rate, ffuf_threads, _ = speed
 
     for hostname in sorted(eligible):
-        print(f"\n  Scanning {hostname}...")
-        results, raw_stdout, raw_stderr = run_ffuf_dir(hostname, DIR_WORDLIST, timeout, ffuf_rate, ffuf_threads, status_codes)
+        base_path = eligible[hostname].get("base_path", "/")
+        print(f"\n  Scanning {hostname} (base: {base_path})...")
+        results, raw_stdout, raw_stderr = run_ffuf_dir(hostname, DIR_WORDLIST, timeout, ffuf_rate, ffuf_threads, status_codes, base_path)
 
         if results:
             print(f"    Found {len(results)} entries:")
@@ -533,8 +549,10 @@ def scan_directories(hosts, timeout, speed):
 # Phase 5: File Scanning
 # ---------------------------------------------------------------------------
 
-def run_ffuf_files(host, wordlist, extensions, timeout, ffuf_rate=0, ffuf_threads=20, status_codes="200,204,301,302,307,401,403"):
-    url = f"https://{host}/FUZZ"
+def run_ffuf_files(host, wordlist, extensions, timeout, ffuf_rate=0, ffuf_threads=20, status_codes="200,204,301,302,307,401,403", base_path="/"):
+    # Build URL with base path (e.g., /srp2/FUZZ instead of /FUZZ)
+    base = base_path.rstrip("/")
+    url = f"https://{host}{base}/FUZZ"
     ext_list = ",".join(f".{e}" for e in extensions.split(","))
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
     # Use ffuf's -maxtime instead of subprocess timeout (more reliable on Windows/WSL)
@@ -547,7 +565,7 @@ def run_ffuf_files(host, wordlist, extensions, timeout, ffuf_rate=0, ffuf_thread
         print(f"    \033[90m[DEBUG] rc: {rc}, stdout len: {len(stdout)}, stderr len: {len(stderr)}\033[0m")
         if stderr and len(stderr) < 1000:
             print(f"    \033[90m[DEBUG] stderr: {stderr[:500]}\033[0m")
-    return parse_ffuf_output(stdout), stdout, stderr
+    return parse_ffuf_output(stdout, base_path), stdout, stderr
 
 
 def scan_files(hosts, timeout, speed):
@@ -610,8 +628,9 @@ def scan_files(hosts, timeout, speed):
     print(f"  \033[90m(Timeout: {file_timeout // 60} min for ~{estimated_requests} requests)\033[0m\n")
 
     for hostname in sorted(eligible):
-        print(f"\n  Scanning {hostname} for files ({extensions})...")
-        results, raw_stdout, raw_stderr = run_ffuf_files(hostname, DIR_WORDLIST, extensions, file_timeout, ffuf_rate, ffuf_threads, status_codes)
+        base_path = eligible[hostname].get("base_path", "/")
+        print(f"\n  Scanning {hostname} for files (base: {base_path})...")
+        results, raw_stdout, raw_stderr = run_ffuf_files(hostname, DIR_WORDLIST, extensions, file_timeout, ffuf_rate, ffuf_threads, status_codes, base_path)
 
         if results:
             print(f"    Found {len(results)} files:")
@@ -1417,9 +1436,10 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
 
     # Directory scanning
     if settings.get("directories") and info.get("allow_dir_scan") and not info.get("blocked"):
-        print(f"\n  [Directory Scan]")
+        base_path = info.get("base_path", "/")
+        print(f"\n  [Directory Scan] (base: {base_path})")
         status_codes = settings.get("dir_status_codes", "200,204,301,302,307,401,403")
-        results, _, _ = run_ffuf_dir(hostname, DIR_WORDLIST, scan_timeout, ffuf_rate, ffuf_threads, status_codes)
+        results, _, _ = run_ffuf_dir(hostname, DIR_WORDLIST, scan_timeout, ffuf_rate, ffuf_threads, status_codes, base_path)
         info["results"]["directories"] = results
         print(f"    Found {len(results)} directories")
         for path, code in results[:10]:
@@ -1430,14 +1450,15 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
 
     # File scanning
     if settings.get("files") and info.get("allow_dir_scan") and not info.get("blocked"):
-        print(f"\n  [File Scan]")
+        base_path = info.get("base_path", "/")
+        print(f"\n  [File Scan] (base: {base_path})")
         extensions = settings.get("file_extensions", FILE_EXTENSIONS)
         status_codes = settings.get("file_status_codes", "200,204,301,302,307,401,403")
         num_ext = len(extensions.split(","))
         estimated_requests = 4600 * num_ext
         effective_rate = ffuf_rate if ffuf_rate > 0 else 100
         file_timeout = max(scan_timeout, int((estimated_requests / effective_rate) * 1.5))
-        results, _, _ = run_ffuf_files(hostname, DIR_WORDLIST, extensions, file_timeout, ffuf_rate, ffuf_threads, status_codes)
+        results, _, _ = run_ffuf_files(hostname, DIR_WORDLIST, extensions, file_timeout, ffuf_rate, ffuf_threads, status_codes, base_path)
         info["results"]["files"] = results
         print(f"    Found {len(results)} files")
         for path, code in results[:10]:

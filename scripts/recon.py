@@ -1047,7 +1047,8 @@ def write_report(hosts, scope_file, output_path):
             lines.append("")
             if dirs:
                 for path, code in dirs:
-                    lines.append(f"- `{path}` ({code})")
+                    full_url = f"https://{hostname}/{path.lstrip('/')}" if path else f"https://{hostname}/"
+                    lines.append(f"- {full_url} ({code})")
             else:
                 lines.append("No directories found.")
             lines.append("")
@@ -1062,7 +1063,8 @@ def write_report(hosts, scope_file, output_path):
             lines.append("")
             if files:
                 for path, code in files:
-                    lines.append(f"- `{path}` ({code})")
+                    full_url = f"https://{hostname}/{path.lstrip('/')}" if path else f"https://{hostname}/"
+                    lines.append(f"- {full_url} ({code})")
             else:
                 lines.append("No files found.")
             lines.append("")

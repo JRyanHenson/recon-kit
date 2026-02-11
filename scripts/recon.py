@@ -1172,14 +1172,16 @@ def write_host_report(hostname, info, output_dir):
     if "directories" in results and results["directories"]:
         lines.extend(["## Directories", ""])
         for path, code in results["directories"]:
-            lines.append(f"- `{path}` ({code})")
+            full_url = f"https://{hostname}/{path.lstrip('/')}" if path else f"https://{hostname}/"
+            lines.append(f"- {full_url} ({code})")
         lines.append("")
 
     # Files
     if "files" in results and results["files"]:
         lines.extend(["## Files", ""])
         for path, code in results["files"]:
-            lines.append(f"- `{path}` ({code})")
+            full_url = f"https://{hostname}/{path.lstrip('/')}" if path else f"https://{hostname}/"
+            lines.append(f"- {full_url} ({code})")
         lines.append("")
 
     # httpx
@@ -1382,7 +1384,8 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
         info["results"]["directories"] = results
         print(f"    Found {len(results)} directories")
         for path, code in results[:10]:
-            print(f"      {path} ({code})")
+            full_url = f"https://{hostname}/{path.lstrip('/')}" if path else f"https://{hostname}/"
+            print(f"      {full_url} ({code})")
         if len(results) > 10:
             print(f"      ... and {len(results) - 10} more")
 
@@ -1399,7 +1402,8 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
         info["results"]["files"] = results
         print(f"    Found {len(results)} files")
         for path, code in results[:10]:
-            print(f"      {path} ({code})")
+            full_url = f"https://{hostname}/{path.lstrip('/')}" if path else f"https://{hostname}/"
+            print(f"      {full_url} ({code})")
         if len(results) > 10:
             print(f"      ... and {len(results) - 10} more")
 
@@ -1419,13 +1423,19 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
         # Build list of URLs to screenshot: homepage + discovered directories + files
         urls = [f"https://{hostname}"]
 
+        dirs = info["results"].get("directories", [])
+        files = info["results"].get("files", [])
+
+        if DEBUG:
+            print(f"    \033[90m[DEBUG] Found {len(dirs)} directories and {len(files)} files in results\033[0m")
+
         # Add discovered directories
-        for path, code in info["results"].get("directories", []):
+        for path, code in dirs:
             if path and path != "/":
                 urls.append(f"https://{hostname}/{path.lstrip('/')}")
 
         # Add discovered files
-        for path, code in info["results"].get("files", []):
+        for path, code in files:
             if path and path != "/":
                 urls.append(f"https://{hostname}/{path.lstrip('/')}")
 
@@ -1438,7 +1448,7 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
         cmd = f"mkdir -p {output_dir} && echo -e '{urls_str}' | gowitness scan file -f - --write-screenshots --screenshot-path {output_dir}"
         if DEBUG:
             print(f"    \033[90m[DEBUG] URLs: {urls[:5]}{'...' if len(urls) > 5 else ''}\033[0m")
-            print(f"    \033[90m[DEBUG] cmd: {cmd[:150]}...\033[0m")
+            print(f"    \033[90m[DEBUG] cmd: {cmd[:200]}...\033[0m")
         stdout, stderr, rc = wsl_run(cmd, scan_timeout)
         if DEBUG:
             print(f"    \033[90m[DEBUG] rc: {rc}, stdout: {len(stdout)}, stderr: {len(stderr)}\033[0m")

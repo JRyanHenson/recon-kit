@@ -1418,17 +1418,36 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
     if settings.get("screenshots") and not info.get("blocked"):
         print(f"\n  [Screenshot]")
         output_dir = settings.get("screenshot_dir", "/tmp/gowitness")
-        url = f"https://{hostname}"
-        cmd = f"mkdir -p {output_dir} && echo '{url}' | gowitness scan file -f - --write-screenshots --screenshot-path {output_dir}"
+
+        # Build list of URLs to screenshot: homepage + discovered directories + files
+        urls = [f"https://{hostname}"]
+
+        # Add discovered directories
+        for path, code in info["results"].get("directories", []):
+            if path and path != "/":
+                urls.append(f"https://{hostname}/{path.lstrip('/')}")
+
+        # Add discovered files
+        for path, code in info["results"].get("files", []):
+            if path and path != "/":
+                urls.append(f"https://{hostname}/{path.lstrip('/')}")
+
+        # Deduplicate
+        urls = list(dict.fromkeys(urls))
+
+        print(f"    Screenshotting {len(urls)} URLs...")
+
+        urls_str = "\\n".join(urls)
+        cmd = f"mkdir -p {output_dir} && echo -e '{urls_str}' | gowitness scan file -f - --write-screenshots --screenshot-path {output_dir}"
         if DEBUG:
-            print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
+            print(f"    \033[90m[DEBUG] URLs: {urls[:5]}{'...' if len(urls) > 5 else ''}\033[0m")
+            print(f"    \033[90m[DEBUG] cmd: {cmd[:150]}...\033[0m")
         stdout, stderr, rc = wsl_run(cmd, scan_timeout)
         if DEBUG:
             print(f"    \033[90m[DEBUG] rc: {rc}, stdout: {len(stdout)}, stderr: {len(stderr)}\033[0m")
-            if stdout:
-                print(f"    \033[90m[DEBUG] stdout: {stdout[:300]}\033[0m")
-            if stderr:
+            if stderr and len(stderr) < 500:
                 print(f"    \033[90m[DEBUG] stderr: {stderr[:500]}\033[0m")
+
         # Check what was actually saved
         count_stdout, _, _ = wsl_run(f"find {output_dir} -name '*.png' -o -name '*.jpeg' -o -name '*.jpg' 2>/dev/null | wc -l", 10)
         count = count_stdout.strip() if count_stdout else "0"

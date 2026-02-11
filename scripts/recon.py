@@ -431,10 +431,17 @@ def enum_subdomains(hosts, timeout, speed):
 # Phase 4: Directory Scanning
 # ---------------------------------------------------------------------------
 
+def strip_ansi(text):
+    """Remove ANSI escape sequences from text."""
+    return re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', text)
+
+
 def parse_ffuf_output(stdout):
     """Parse ffuf output lines into list of (path, status_code) tuples."""
     results = []
     for line in stdout.splitlines():
+        # Strip ANSI escape codes first
+        line = strip_ansi(line)
         if "[Status:" not in line:
             continue
         # Format: path  [Status: 200, Size: 1234, Words: 56, Lines: 12, Duration: 123ms]
@@ -813,7 +820,8 @@ def crawl_js(hosts, timeout):
 # ---------------------------------------------------------------------------
 
 def run_paramspider(host, timeout):
-    cmd = f"paramspider -d {host} --quiet"
+    # Use -s for stream mode (outputs URLs directly)
+    cmd = f"paramspider -d {host} -s"
     if DEBUG:
         print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
     stdout, stderr, rc = wsl_run(cmd, timeout)
@@ -866,9 +874,14 @@ def discover_params(hosts, timeout):
 # Phase 10: Nuclei Vulnerability Scanning
 # ---------------------------------------------------------------------------
 
-def run_nuclei(host, timeout, templates):
+def run_nuclei(host, timeout, templates, use_automatic=False):
     url = f"https://{host}"
-    template_flag = f"-tags {templates}" if templates else ""
+    if use_automatic:
+        template_flag = "-as"
+    elif templates:
+        template_flag = f"-tags {templates}"
+    else:
+        template_flag = "-as"  # Default to automatic scan
     cmd = f"nuclei -u {url} -silent {template_flag}"
     if DEBUG:
         print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
@@ -917,7 +930,8 @@ def nuclei_scan(hosts, timeout):
         else:
             print("  Invalid choice. Enter 1-4.")
 
-    template_flag = f"-tags {templates}" if templates else ""
+    # Use -tags for specific templates, or -as (automatic scan) for all templates
+    template_flag = f"-tags {templates}" if templates else "-as"
 
     scannable = {h: v for h, v in hosts.items() if not h.startswith(".") and h != "__httpx_results" and h != "__screenshot_results" and not v.get("blocked")}
 
@@ -926,7 +940,7 @@ def nuclei_scan(hosts, timeout):
     for hostname in sorted(scannable):
         print(f"  [{hostname}]")
         url = f"https://{hostname}"
-        cmd = f"nuclei -u {url} -silent {template_flag} 2>/dev/null"
+        cmd = f"nuclei -u {url} -silent {template_flag}"
         stdout, stderr, rc = wsl_run(cmd, timeout)
 
         results = [line.strip() for line in stdout.splitlines() if line.strip()] if stdout else []

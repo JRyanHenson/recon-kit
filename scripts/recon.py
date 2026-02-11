@@ -1132,8 +1132,10 @@ def write_report(hosts, scope_file, output_path):
             lines.append(f"### {hostname}")
             lines.append("")
             if findings:
+                lines.append("```")
                 for finding in findings:
-                    lines.append(f"- `{finding}`")
+                    lines.append(finding)
+                lines.append("```")
             else:
                 lines.append("No issues found.")
             lines.append("")
@@ -1246,8 +1248,10 @@ def write_host_report(hostname, info, output_dir):
     # Nuclei
     if "nuclei" in results and results["nuclei"]:
         lines.extend(["## Vulnerabilities", ""])
+        lines.append("```")
         for finding in results["nuclei"]:
-            lines.append(f"- `{finding}`")
+            lines.append(finding)
+        lines.append("```")
         lines.append("")
 
     # Write file

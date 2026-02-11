@@ -150,16 +150,24 @@ def parse_burp_scope(path):
         # Extract hostname from regex
         # Handle wildcard subdomain patterns: ^.+\\.target\\.gov$ or ^.*\\.target\\.gov$ → *.target.gov
         is_wildcard = False
+        if DEBUG:
+            print(f"  [DEBUG] host_pattern: {repr(host_pattern)}")
+            print(f"  [DEBUG] startswith ^.+\\\\.: {host_pattern.startswith('^.+\\.')}")
+            print(f"  [DEBUG] startswith ^.*\\\\.: {host_pattern.startswith('^.*\\.')}")
         if host_pattern.startswith("^.+\\.") or host_pattern.startswith("^.*\\."):
             # Wildcard subdomain pattern - extract base domain
             # ^.+\\.target\\.gov$ → .target.gov (wildcard marker)
             # Skip 5 chars: ^ . + \ .
             hostname = "." + host_pattern[5:].rstrip("$").replace("\\.", ".")
             is_wildcard = True
+            if DEBUG:
+                print(f"  [DEBUG] WILDCARD: hostname={hostname}")
         else:
             hostname = host_pattern.strip("^$").replace("\\.", ".")
             # Also check for patterns like ^\.target\.gov$ (starts with \.)
             is_wildcard = hostname.startswith(".")
+            if DEBUG:
+                print(f"  [DEBUG] NORMAL: hostname={hostname}")
 
         if not hostname:
             continue

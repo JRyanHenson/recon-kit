@@ -196,9 +196,20 @@ def parse_burp_scope(path):
         # e.g., .target.gov enables subdomain scanning on target.gov
         if is_wildcard:
             hosts[hostname]["allow_subdomain_scan"] = True
-            # Also enable subdomain scanning on the base domain if it exists
+            # Also enable/create subdomain scanning on the base domain
             base_domain = hostname.lstrip(".")
-            if base_domain in hosts:
+            if base_domain not in hosts:
+                # Create base domain entry for subdomain enumeration
+                hosts[base_domain] = {
+                    "hostname": base_domain,
+                    "allow_dir_scan": hosts[hostname].get("allow_dir_scan", False),
+                    "allow_subdomain_scan": True,
+                    "base_path": hosts[hostname].get("base_path", "/"),
+                    "results": {},
+                }
+                if DEBUG:
+                    print(f"  [DEBUG] Created base domain {base_domain} from wildcard {hostname}")
+            else:
                 hosts[base_domain]["allow_subdomain_scan"] = True
                 if DEBUG:
                     print(f"  [DEBUG] Enabled subdomain scan on {base_domain} from wildcard {hostname}")

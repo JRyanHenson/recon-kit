@@ -506,13 +506,14 @@ def parse_ffuf_output(stdout, base_path="/"):
     return results
 
 
-def run_ffuf_dir(host, wordlist, timeout, ffuf_rate=0, ffuf_threads=20, status_codes="200,204,301,302,307,401,403", base_path="/"):
+def run_ffuf_dir(host, wordlist, timeout, ffuf_rate=0, ffuf_threads=20, status_codes="200,204,301,302,307,401,403", base_path="/", auto_calibrate=False):
     # Build URL with base path (e.g., /srp2/FUZZ instead of /FUZZ)
     base = base_path.rstrip("/")
     url = f"https://{host}{base}/FUZZ"
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
+    ac_flag = "-ac" if auto_calibrate else ""
     # Use ffuf's -maxtime instead of subprocess timeout (more reliable on Windows/WSL)
-    cmd = f"ffuf -u {url} -w {wordlist} -mc {status_codes} -t {ffuf_threads} {rate_flag} -maxtime {timeout} -noninteractive"
+    cmd = f"ffuf -u {url} -w {wordlist} -mc {status_codes} -t {ffuf_threads} {rate_flag} {ac_flag} -maxtime {timeout} -noninteractive"
     stdout, stderr, rc = wsl_run(cmd, timeout + 60)
     return parse_ffuf_output(stdout, base_path), stdout, stderr
 
@@ -558,12 +559,14 @@ def scan_directories(hosts, timeout, speed):
         return
 
     status_codes = prompt_status_codes()
+    print("  \033[93mAuto-calibrate filters out 'soft 404' responses (sites returning 200 for everything).\033[0m")
+    auto_calibrate = prompt_yn("Enable auto-calibrate?")
     _, _, ffuf_rate, ffuf_threads, _ = speed
 
     for hostname in sorted(eligible):
         base_path = eligible[hostname].get("base_path", "/")
-        print(f"\n  Scanning {hostname} (base: {base_path})...")
-        results, raw_stdout, raw_stderr = run_ffuf_dir(hostname, DIR_WORDLIST, timeout, ffuf_rate, ffuf_threads, status_codes, base_path)
+        print(f"\n  Scanning {hostname} (base: {base_path}){' [auto-cal]' if auto_calibrate else ''}...")
+        results, raw_stdout, raw_stderr = run_ffuf_dir(hostname, DIR_WORDLIST, timeout, ffuf_rate, ffuf_threads, status_codes, base_path, auto_calibrate)
 
         if results:
             print(f"    Found {len(results)} entries:")
@@ -589,14 +592,15 @@ def scan_directories(hosts, timeout, speed):
 # Phase 5: File Scanning
 # ---------------------------------------------------------------------------
 
-def run_ffuf_files(host, wordlist, extensions, timeout, ffuf_rate=0, ffuf_threads=20, status_codes="200,204,301,302,307,401,403", base_path="/"):
+def run_ffuf_files(host, wordlist, extensions, timeout, ffuf_rate=0, ffuf_threads=20, status_codes="200,204,301,302,307,401,403", base_path="/", auto_calibrate=False):
     # Build URL with base path (e.g., /srp2/FUZZ instead of /FUZZ)
     base = base_path.rstrip("/")
     url = f"https://{host}{base}/FUZZ"
     ext_list = ",".join(f".{e}" for e in extensions.split(","))
     rate_flag = f"-rate {ffuf_rate}" if ffuf_rate > 0 else ""
+    ac_flag = "-ac" if auto_calibrate else ""
     # Use ffuf's -maxtime instead of subprocess timeout (more reliable on Windows/WSL)
-    cmd = f"ffuf -u {url} -w {wordlist} -e {ext_list} -mc {status_codes} -t {ffuf_threads} {rate_flag} -maxtime {timeout} -noninteractive"
+    cmd = f"ffuf -u {url} -w {wordlist} -e {ext_list} -mc {status_codes} -t {ffuf_threads} {rate_flag} {ac_flag} -maxtime {timeout} -noninteractive"
     if DEBUG:
         print(f"    \033[90m[DEBUG] cmd: {cmd}\033[0m")
     # Use very long subprocess timeout since ffuf handles its own timing
@@ -657,6 +661,8 @@ def scan_files(hosts, timeout, speed):
         return
 
     status_codes = prompt_status_codes()
+    print("  \033[93mAuto-calibrate filters out 'soft 404' responses (sites returning 200 for everything).\033[0m")
+    auto_calibrate = prompt_yn("Enable auto-calibrate?")
     _, _, ffuf_rate, ffuf_threads, _ = speed
 
     # Estimate timeout based on requests and speed
@@ -669,8 +675,8 @@ def scan_files(hosts, timeout, speed):
 
     for hostname in sorted(eligible):
         base_path = eligible[hostname].get("base_path", "/")
-        print(f"\n  Scanning {hostname} for files (base: {base_path})...")
-        results, raw_stdout, raw_stderr = run_ffuf_files(hostname, DIR_WORDLIST, extensions, file_timeout, ffuf_rate, ffuf_threads, status_codes, base_path)
+        print(f"\n  Scanning {hostname} for files (base: {base_path}){' [auto-cal]' if auto_calibrate else ''}...")
+        results, raw_stdout, raw_stderr = run_ffuf_files(hostname, DIR_WORDLIST, extensions, file_timeout, ffuf_rate, ffuf_threads, status_codes, base_path, auto_calibrate)
 
         if results:
             print(f"    Found {len(results)} files:")
@@ -1349,6 +1355,11 @@ def collect_phase_settings(hosts, speed):
     settings["nuclei"] = prompt_yn("Run nuclei scanning?")
 
     # Collect additional settings for enabled phases
+    if settings["directories"] or settings["files"]:
+        print()
+        print("  \033[93mAuto-calibrate filters out 'soft 404' responses (sites returning 200 for everything).\033[0m")
+        settings["auto_calibrate"] = prompt_yn("Enable auto-calibrate for fuzzing?")
+
     if settings["directories"]:
         print()
         settings["dir_status_codes"] = prompt_status_codes()
@@ -1477,9 +1488,10 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
     # Directory scanning
     if settings.get("directories") and info.get("allow_dir_scan") and not info.get("blocked"):
         base_path = info.get("base_path", "/")
-        print(f"\n  [Directory Scan] (base: {base_path})")
+        auto_cal = settings.get("auto_calibrate", False)
+        print(f"\n  [Directory Scan] (base: {base_path}){' [auto-cal]' if auto_cal else ''}")
         status_codes = settings.get("dir_status_codes", "200,204,301,302,307,401,403")
-        results, _, _ = run_ffuf_dir(hostname, DIR_WORDLIST, scan_timeout, ffuf_rate, ffuf_threads, status_codes, base_path)
+        results, _, _ = run_ffuf_dir(hostname, DIR_WORDLIST, scan_timeout, ffuf_rate, ffuf_threads, status_codes, base_path, auto_cal)
         info["results"]["directories"] = results
         print(f"    Found {len(results)} directories")
         for path, code in results[:10]:
@@ -1491,14 +1503,15 @@ def process_host(hostname, info, settings, speed, proxy_addr, timeout, scan_time
     # File scanning
     if settings.get("files") and info.get("allow_dir_scan") and not info.get("blocked"):
         base_path = info.get("base_path", "/")
-        print(f"\n  [File Scan] (base: {base_path})")
+        auto_cal = settings.get("auto_calibrate", False)
+        print(f"\n  [File Scan] (base: {base_path}){' [auto-cal]' if auto_cal else ''}")
         extensions = settings.get("file_extensions", FILE_EXTENSIONS)
         status_codes = settings.get("file_status_codes", "200,204,301,302,307,401,403")
         num_ext = len(extensions.split(","))
         estimated_requests = 4600 * num_ext
         effective_rate = ffuf_rate if ffuf_rate > 0 else 100
         file_timeout = max(scan_timeout, int((estimated_requests / effective_rate) * 1.5))
-        results, _, _ = run_ffuf_files(hostname, DIR_WORDLIST, extensions, file_timeout, ffuf_rate, ffuf_threads, status_codes, base_path)
+        results, _, _ = run_ffuf_files(hostname, DIR_WORDLIST, extensions, file_timeout, ffuf_rate, ffuf_threads, status_codes, base_path, auto_cal)
         info["results"]["files"] = results
         print(f"    Found {len(results)} files")
         for path, code in results[:10]:
